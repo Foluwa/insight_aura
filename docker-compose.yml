@@ -1,0 +1,79 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.backend
+    container_name: backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - airflow_scheduler
+    networks:
+      - app_network
+
+  airflow_scheduler:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_scheduler
+    command: scheduler
+    networks:
+      - app_network
+
+  airflow_webserver:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_webserver
+    command: webserver
+    ports:
+      - "8080:8080"
+    networks:
+      - app_network
+
+  airflow_worker:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_worker
+    command: worker
+    networks:
+      - app_network
+
+  mlflow:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.mlflow
+    container_name: mlflow
+    ports:
+      - "5000:5000"
+    networks:
+      - app_network
+
+  prometheus:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.prometheus
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - app_network
+
+  grafana:
+    build:
+      context: ./backend
+      dockerfile: docker/Dockerfile.grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge
