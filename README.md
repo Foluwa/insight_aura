@@ -36,6 +36,7 @@ allows users to search for apps, analyze sentiment (positive, negative, neutral)
 ├── backend/
 │   ├── api/
 │   │   ├── __init__.py
+│   │   ├── lifespan.py 
 │   │   ├── routes/
 │   │   │   ├── scraper.py
 │   │   │   ├── sentiment.py
@@ -49,8 +50,13 @@ allows users to search for apps, analyze sentiment (positive, negative, neutral)
 │   │   ├── app_schema.py
 │   │   ├── review_schema.py
 │   ├── services/
+│   │   ├── base_service.py    
+│   │   ├── review_service.py    
 │   │   ├── scraper_google.py
 │   │   ├── scraper_apple.py
+│   ├── tests/
+│   │   ├── services/
+│   │   │   ├── test_review_service.py
 │   ├── database/
 │   │   ├── connection.py                    # Connect to external PostgreSQL
 │   │   ├── queries.py

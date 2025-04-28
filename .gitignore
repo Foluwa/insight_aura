@@ -79,3 +79,4 @@ lerna-debug.log*
 
 # Custom files
 TODOS.md
+env_sent/
