@@ -28,6 +28,10 @@ app = FastAPI(
 if SENTRY_DSN:
     app.add_middleware(SentryAsgiMiddleware)
 
+# Sentient Analysis Router
+# app.include_router(sentiment.router, prefix="/api/v1", tags=["Sentiment"])
+app.include_router(sentiment.router)
+
 # Health Check Endpoint
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
