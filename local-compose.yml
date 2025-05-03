@@ -102,9 +102,6 @@ services:
       - "3000:3000"
     networks:
       - app_network
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASS}
 
   postgres:
     image: postgres:13

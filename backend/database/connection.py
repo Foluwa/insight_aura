@@ -38,6 +38,7 @@ async def test_connection():
         else:
             raise Exception("❌ Database connection test failed.")
 
+
 async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
     global db_pool
     if not db_pool:

@@ -1,0 +1,12 @@
+FROM grafana/grafana:9.5.2
+
+# Environment variables
+ENV GF_SECURITY_ADMIN_PASSWORD=admin
+ENV GF_USERS_ALLOW_SIGN_UP=false
+
+# Copy Grafana configuration and dashboards
+COPY ./docker/grafana/provisioning /etc/grafana/provisioning
+COPY ./docker/grafana/dashboards /var/lib/grafana/dashboards
+
+# Expose the Grafana port
+EXPOSE 3000

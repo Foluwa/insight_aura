@@ -52,8 +52,8 @@ allows users to search for apps, analyze sentiment (positive, negative, neutral)
 │   ├── services/
 │   │   ├── base_service.py    
 │   │   ├── review_service.py    
-│   │   ├── scraper_google.py
-│   │   ├── scraper_apple.py
+│   │   ├── google_review_scraper.py
+│   │   ├── apple_review_scraper.py
 │   ├── tests/
 │   │   ├── services/
 │   │   │   ├── test_review_service.py
@@ -211,6 +211,109 @@ The Makefile automates all essential tasks:
 | `make set_env_prod` | Copy `.env.production` to `.env` |
 
 ---
+
+
+## 🛠️ Development Workflow with Makefile
+
+This project uses a **Makefile** to simplify common tasks.
+
+### Available Commands:
+
+| Command | Description |
+|:-------:|:-----------:|
+| `make install` | Install Python dependencies into the virtual environment |
+| `make migrate` | Run database migrations |
+| `make backend-dev` | Start the FastAPI backend server (with Hot Reload) |
+| `make docker-build` | Build Docker images |
+| `make docker-up` | Start all Docker containers (backend, airflow, mlflow, etc.) |
+| `make docker-down` | Stop all Docker containers |
+| `make docker-restart` | Restart Docker containers cleanly |
+| `make test` | Run backend unit tests |
+
+---
+
+
+
+## 🛠️ Makefile Commands Reference
+
+### ⚙️ Setup & Install
+
+| Command | Description |
+|--------|-------------|
+| `make install` | Install Python dependencies using `pip` in the virtualenv |
+| `make check-env` | Ensure `.env` file exists |
+| `make check-venv` | Ensure Python virtualenv exists |
+| `make load-env` | Export all variables from `.env` into the shell |
+
+### 🚀 Application Startup
+
+| Command | Description |
+|--------|-------------|
+| `make up` | Smart startup: starts Postgres, waits, initializes Airflow if needed, then starts everything |
+| `make backend-dev` | Run FastAPI dev server (`uvicorn`) |
+| `make bootstrap-airflow` | Init Airflow DB if needed and restart services |
+
+### 🐳 Docker Infrastructure
+
+| Command | Description |
+|--------|-------------|
+| `make docker-up` | Start all Docker containers |
+| `make docker-down` | Stop all containers |
+| `make docker-restart` | Restart all containers |
+| `make docker-build` | Rebuild all Docker images |
+| `make docker-status` | Show Docker container statuses |
+| `make docker-logs` | Show container logs |
+| `make docker-prune` | Remove unused Docker resources |
+
+### 🔁 Database
+
+| Command | Description |
+|--------|-------------|
+| `make migrate` | Run database migrations |
+| `make backup-db` | Backup PostgreSQL to timestamped `.sql` |
+
+### 🌬️ Airflow
+
+| Command | Description |
+|--------|-------------|
+| `make airflow-init` | Initialize Airflow DB |
+| `make airflow-version` | Show Airflow version |
+| `make health-check` | Ping services: FastAPI, Airflow, Postgres |
+
+### ⚠️ Dev-Only
+
+| Command | Description |
+|--------|-------------|
+| `make kill-all` | ⚠️ Wipe all Docker volumes + containers (with prompt) |
+
+
+
+### 🧩 Setup
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/your-username/sentiment-analysis-platform.git
+cd sentiment-analysis-platform
+
+# 2. Create a virtual environment manually if it doesn't exist
+python3 -m venv env_sent
+
+# 3. Activate your virtual environment
+source env_sent/bin/activate
+
+# 4. Install all Python dependencies
+make install
+
+# 5. Create a .env file (copy from .env.example if available)
+cp .env.example .env
+
+# 6. Run database migrations
+make migrate
+
+# 7. Start backend server for development
+make backend-dev
+```
+
 
 ## 🧠 Features
 

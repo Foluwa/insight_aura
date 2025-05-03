@@ -1,3 +1,23 @@
+#!/bin/bash
+
+# Diagnose and fix Docker network issues
+echo "==== Docker Network Diagnostics ===="
+
+# 1. Check and log current Docker info
+echo "1. Current Docker info:"
+docker info
+
+# 2. Check if we have the required images already
+echo "2. Checking for required images:"
+docker images | grep airflow
+docker images | grep python
+docker images | grep postgres
+docker images | grep grafana
+docker images | grep prometheus
+
+# 3. Create a local-compose.yml file that uses local images only
+echo "3. Creating local-compose.yml file..."
+cat > local-compose.yml << 'EOL'
 version: '3.8'
 
 services:
@@ -102,9 +122,6 @@ services:
       - "3000:3000"
     networks:
       - app_network
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASS}
 
   postgres:
     image: postgres:13
@@ -133,3 +150,14 @@ networks:
 
 volumes:
   postgres_data:
+EOL
+
+echo "4. Starting services with local-compose.yml..."
+docker-compose -f local-compose.yml up -d
+
+echo "5. Checking service status..."
+docker-compose -f local-compose.yml ps
+
+echo "==== Setup Complete ===="
+echo "Services should now be running using local images without needing to build."
+echo "If you encounter issues, run: docker-compose -f local-compose.yml logs"
