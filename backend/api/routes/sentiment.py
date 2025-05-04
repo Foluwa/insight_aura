@@ -1,41 +1,3 @@
-import logging
-
-logger = logging.getLogger("sentiment")
-logging.basicConfig(level=logging.INFO)
-
-from fastapi import APIRouter, HTTPException
-from backend.schemas.sentiment_schema import BatchSentimentRequest, BatchSentimentResponse, SentimentRequest, SentimentResponse
-from backend.services.sentiment_service import SentimentService
-
-router = APIRouter(prefix="/predict", tags=["Sentiment"])
-
-@router.post("/", response_model=SentimentResponse)
-async def predict_sentiment(payload: SentimentRequest):
-    try:
-        logger.info(f"📩 Incoming prediction request: {payload.text}")
-        result = SentimentService.analyze(payload.text)
-        return SentimentResponse(**result)
-    except Exception as e:
-        logger.error(f"❌ Prediction failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-    
-# @router.post("/", response_model=SentimentResponse)
-# async def predict_sentiment(payload: SentimentRequest):
-#     try:
-#         result = SentimentService.analyze(payload.text)
-#         return SentimentResponse(**result)
-#     except Exception as e:
-#         raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
-
-@router.post("/batch", response_model=BatchSentimentResponse)
-async def predict_batch(payload: BatchSentimentRequest):
-    try:
-        results = [SentimentService.analyze(text) for text in payload.texts]
-        return {"results": results}
-    except Exception as e:
-        logger.error(f"❌ Batch prediction failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
-        
 # from fastapi import APIRouter, Depends
 # from backend.database.connection import get_db_connection
 # from backend.services.review_service import ReviewService
@@ -54,3 +16,63 @@ async def predict_batch(payload: BatchSentimentRequest):
 #     service = ReviewService(connection)
 #     reviews = await service.get_reviews_for_app(app_id, platform)
 #     return {"reviews": reviews}
+
+import datetime
+import logging
+
+from backend.database.connection import get_db_connection
+from backend.schemas.review_schema import PredictRequest
+
+logger = logging.getLogger("sentiment")
+logging.basicConfig(level=logging.INFO)
+
+from fastapi import APIRouter, HTTPException
+from backend.schemas.sentiment_schema import BatchSentimentRequest, BatchSentimentResponse, SentimentRequest, SentimentResponse
+from backend.services.sentiment_service import SentimentService
+
+router = APIRouter(prefix="/predict", tags=["Sentiment"])
+
+@router.post("/")
+async def predict_sentiment(payload: PredictRequest):
+    try:
+        async with get_db_connection() as conn:
+            result = await conn.fetchrow(
+                """
+                INSERT INTO reviews (
+                    app_id, platform, content, date, created_at
+                )
+                VALUES ($1, $2, $3, $4, NOW())
+                RETURNING id;
+                """,
+                payload.app_id,
+                payload.platform,
+                payload.text,
+                datetime.datetime.utcnow()
+            )
+
+            if not result:
+                return {"error": "Failed to insert review"}
+
+            review_id = result["id"]
+
+        # Run sentiment analysis and store ML output
+        response = SentimentService.analyze(payload.text, review_id)
+        return {
+            "review_id": review_id,
+            "sentiment": response
+        }
+
+    except Exception as e:
+        return {"error": f"Prediction failed: {str(e)}"}
+    
+
+@router.post("/batch", response_model=BatchSentimentResponse)
+async def predict_batch(payload: BatchSentimentRequest):
+    try:
+        results = [SentimentService.analyze(text) for text in payload.texts]
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"❌ Batch prediction failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Batch prediction failed: {str(e)}")
+        
+

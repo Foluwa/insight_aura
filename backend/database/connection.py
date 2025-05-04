@@ -1,8 +1,8 @@
 import asyncpg
+from contextlib import asynccontextmanager
 import os
 from typing import Optional, AsyncGenerator
 
-# Read DATABASE_URL from environment
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 db_pool: Optional[asyncpg.pool.Pool] = None
@@ -38,7 +38,7 @@ async def test_connection():
         else:
             raise Exception("❌ Database connection test failed.")
 
-
+@asynccontextmanager
 async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
     global db_pool
     if not db_pool:

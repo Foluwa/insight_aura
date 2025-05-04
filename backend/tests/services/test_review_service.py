@@ -26,7 +26,7 @@ async def test_save_and_get_reviews(db_connection):
     dummy_review = {
         "app_id": "com.test.app",
         "platform": "google",
-        "review_text": "This app is awesome!",
+        "content": "This app is awesome!",
         "sentiment": "positive"
     }
     await service.save_review(dummy_review)
@@ -34,4 +34,4 @@ async def test_save_and_get_reviews(db_connection):
     reviews = await service.get_reviews_for_app("com.test.app", "google")
     
     assert len(reviews) >= 1
-    assert any(review["review_text"] == "This app is awesome!" for review in reviews)
+    assert any(review["content"] == "This app is awesome!" for review in reviews)

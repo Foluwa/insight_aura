@@ -1,10 +1,12 @@
+import os
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI
 from starlette.responses import JSONResponse
-import os
+
 import sentry_sdk
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 from backend.api.lifespan import lifespan
 from backend.api.routes import sentiment
 
@@ -23,6 +25,9 @@ app = FastAPI(
     description="API for scraping app reviews and performing sentiment analysis.",
     lifespan=lifespan
 )
+
+# Register Prometheus instrumentation
+Instrumentator().instrument(app).expose(app)
 
 # Sentry Middleware
 if SENTRY_DSN:

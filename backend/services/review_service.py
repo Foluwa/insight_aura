@@ -17,13 +17,13 @@ class ReviewService(BaseService):
 
     async def save_review(self, review_data: dict) -> None:
         query = """
-        INSERT INTO reviews (app_id, platform, review_text, sentiment, created_at)
+        INSERT INTO reviews (app_id, platform, content, sentiment, created_at)
         VALUES ($1, $2, $3, $4, NOW())
         """
         await self.connection.execute(
             query,
             review_data['app_id'],
             review_data['platform'],
-            review_data['review_text'],
+            review_data['content'],
             review_data['sentiment'],
         )

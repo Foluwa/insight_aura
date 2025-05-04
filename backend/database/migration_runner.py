@@ -3,9 +3,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import asyncio
-import backend.database.connection as db_connection
-from backend.database.migrations.migration_001_create_reviews_table import CreateReviewsTable
-from backend.database.migrations.migration_002_create_ml_outputs_table import CreateMLOutputsTable
+import database.connection as db_connection
+from database.migrations.migration_001_create_reviews_table import CreateReviewsTable
+from database.migrations.migration_002_create_ml_outputs_table import CreateMLOutputsTable
 
 async def run_migrations():
     await db_connection.connect_to_db()
