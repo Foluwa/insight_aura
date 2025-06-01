@@ -2,110 +2,142 @@ version: '3.8'
 
 services:
   backend:
-    # Instead of building, use a Python image directly
     image: python:3.9-slim
-    container_name: backend
+    container_name: backend_dev
     volumes:
       - .:/app
+      - ./logs:/app/logs
     working_dir: /app
-    command: sh -c "pip install -r requirements.txt && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+    command: sh -c "
+      pip install --no-cache-dir -r requirements.txt && 
+      python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+      "
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://airflow:airflow@postgres:5432/airflow}
       - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=development
+      # Development-friendly settings
+      - PROXY_ENABLED=false
+      - TELEGRAM_ALERTS_ENABLED=false
+      - SLACK_ALERTS_ENABLED=false
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - app_network
 
+  # Simplified Airflow for development (no init needed)
   airflow_scheduler:
-    # Use image directly instead of building
     image: apache/airflow:2.7.1
-    container_name: airflow_scheduler
-    command: scheduler
+    container_name: airflow_scheduler_dev
+    command: bash -c "
+      pip install --no-cache-dir -r /requirements.txt &&
+      airflow db init &&
+      airflow users create --username admin --firstname Admin --lastname User --role Admin --email admin@example.com --password admin &&
+      airflow scheduler
+      "
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
       - ./requirements.txt:/requirements.txt
+      - ./.env:/opt/airflow/.env
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
+      
+      # Development settings
+      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=10
+      - AIRFLOW__CORE__PARALLELISM=4
+      - AIRFLOW__CORE__DAG_CONCURRENCY=2
+      
+      # Application Environment Variables
+      - DATABASE_URL=${DATABASE_URL:-postgresql://airflow:airflow@postgres:5432/airflow}
+      - ENVIRONMENT=development
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - app_network
 
   airflow_webserver:
-    # Use image directly instead of building
     image: apache/airflow:2.7.1
-    container_name: airflow_webserver
-    command: webserver
+    container_name: airflow_webserver_dev
+    command: bash -c "
+      pip install --no-cache-dir -r /requirements.txt &&
+      sleep 30 &&
+      airflow webserver
+      "
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
       - ./requirements.txt:/requirements.txt
+      - ./.env:/opt/airflow/.env
     ports:
       - "8080:8080"
     environment:
       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW__CORE__FERNET_KEY=ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=true
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=DEBUG
+      
+      # Application Environment Variables
+      - DATABASE_URL=${DATABASE_URL:-postgresql://airflow:airflow@postgres:5432/airflow}
+      - ENVIRONMENT=development
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - app_network
 
-  airflow_worker:
-    # Use image directly instead of building
-    image: apache/airflow:2.7.1
-    container_name: airflow_worker
-    command: celery worker
-    volumes:
-      - ./backend/airflow/dags:/opt/airflow/dags
-      - ./backend/airflow/plugins:/opt/airflow/plugins
-      - ./requirements.txt:/requirements.txt
-    environment:
-      - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-      - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - app_network
-
+  # Simplified MLflow for development
   mlflow:
-    # Use Python image directly instead of building
     image: python:3.9-slim
-    container_name: mlflow
+    container_name: mlflow_dev
     volumes:
       - .:/app
     working_dir: /app
-    command: sh -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5001"
+    command: sh -c "
+      pip install --no-cache-dir mlflow &&
+      mlflow server --host 0.0.0.0 --port 5001
+      "
     ports:
       - "5001:5001"
     networks:
       - app_network
 
-  prometheus:
-    image: prom/prometheus
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    networks:
-      - app_network
+  # Optional monitoring for development (can be commented out)
+  # prometheus:
+  #   image: prom/prometheus
+  #   container_name: prometheus_dev
+  #   ports:
+  #     - "9090:9090"
+  #   networks:
+  #     - app_network
 
-  grafana:
-    image: grafana/grafana
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    networks:
-      - app_network
+  # grafana:
+  #   image: grafana/grafana
+  #   container_name: grafana_dev
+  #   ports:
+  #     - "3000:3000"
+  #   networks:
+  #     - app_network
 
   postgres:
     image: postgres:13
-    container_name: postgres
+    container_name: postgres_dev
     restart: always
     environment:
       POSTGRES_USER: airflow
@@ -116,17 +148,149 @@ services:
     networks:
       - app_network
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:latest
-    container_name: redis
-    networks:
-      - app_network
+      - postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 networks:
   app_network:
     driver: bridge
 
 volumes:
-  postgres_data:
+  postgres_data_dev:
+
+# version: '3.8'
+
+# services:
+#   backend:
+#     # Instead of building, use a Python image directly
+#     image: python:3.9-slim
+#     container_name: backend
+#     volumes:
+#       - .:/app
+#     working_dir: /app
+#     command: sh -c "pip install -r requirements.txt && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+#     ports:
+#       - "8000:8000"
+#     environment:
+#       - DATABASE_URL=${DATABASE_URL}
+#       - SENTRY_DSN=${SENTRY_DSN}
+#     depends_on:
+#       - postgres
+#     networks:
+#       - app_network
+
+#   airflow_scheduler:
+#     # Use image directly instead of building
+#     image: apache/airflow:2.7.1
+#     container_name: airflow_scheduler
+#     command: scheduler
+#     volumes:
+#       - ./backend/airflow/dags:/opt/airflow/dags
+#       - ./backend/airflow/plugins:/opt/airflow/plugins
+#       - ./requirements.txt:/requirements.txt
+#     environment:
+#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+#     depends_on:
+#       - postgres
+#     networks:
+#       - app_network
+
+#   airflow_webserver:
+#     # Use image directly instead of building
+#     image: apache/airflow:2.7.1
+#     container_name: airflow_webserver
+#     command: webserver
+#     volumes:
+#       - ./backend/airflow/dags:/opt/airflow/dags
+#       - ./backend/airflow/plugins:/opt/airflow/plugins
+#       - ./requirements.txt:/requirements.txt
+#     ports:
+#       - "8080:8080"
+#     environment:
+#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+#     depends_on:
+#       - postgres
+#     networks:
+#       - app_network
+
+#   airflow_worker:
+#     # Use image directly instead of building
+#     image: apache/airflow:2.7.1
+#     container_name: airflow_worker
+#     command: celery worker
+#     volumes:
+#       - ./backend/airflow/dags:/opt/airflow/dags
+#       - ./backend/airflow/plugins:/opt/airflow/plugins
+#       - ./requirements.txt:/requirements.txt
+#     environment:
+#       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
+#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+#       - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
+#     depends_on:
+#       - postgres
+#       - redis
+#     networks:
+#       - app_network
+
+#   mlflow:
+#     # Use Python image directly instead of building
+#     image: python:3.9-slim
+#     container_name: mlflow
+#     volumes:
+#       - .:/app
+#     working_dir: /app
+#     command: sh -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5001"
+#     ports:
+#       - "5001:5001"
+#     networks:
+#       - app_network
+
+#   prometheus:
+#     image: prom/prometheus
+#     container_name: prometheus
+#     ports:
+#       - "9090:9090"
+#     networks:
+#       - app_network
+
+#   grafana:
+#     image: grafana/grafana
+#     container_name: grafana
+#     ports:
+#       - "3000:3000"
+#     networks:
+#       - app_network
+
+#   postgres:
+#     image: postgres:13
+#     container_name: postgres
+#     restart: always
+#     environment:
+#       POSTGRES_USER: airflow
+#       POSTGRES_PASSWORD: airflow
+#       POSTGRES_DB: airflow
+#     ports:
+#       - "5432:5432"
+#     networks:
+#       - app_network
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data
+
+#   redis:
+#     image: redis:latest
+#     container_name: redis
+#     networks:
+#       - app_network
+
+# networks:
+#   app_network:
+#     driver: bridge
+
+# volumes:
+#   postgres_data:

@@ -9,3 +9,13 @@ providers:
     editable: true
     options:
       path: /etc/grafana/dashboards
+
+
+# apiVersion: 1
+
+# providers:
+#   - name: 'default'
+#     folder: 'Sentiment Dashboards'
+#     type: file
+#     options:
+#       path: /etc/grafana/dashboards
