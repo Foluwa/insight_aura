@@ -9,4 +9,4 @@ COPY ./docker/grafana/provisioning /etc/grafana/provisioning
 COPY ./docker/grafana/dashboards /var/lib/grafana/dashboards
 
 # Expose the Grafana port
-EXPOSE 3000
+EXPOSE 3001

@@ -1,0 +1,139 @@
+# caddy/Caddyfile
+# Caddy reverse proxy configuration for Enterprise Scraping System
+
+# For local development/testing - replace with your domain for production
+localhost {
+    # Enable logging
+    log {
+        output file /var/log/caddy/access.log
+        format json
+    }
+
+    # Security headers
+    header {
+        # Security headers
+        X-Frame-Options "SAMEORIGIN"
+        X-XSS-Protection "1; mode=block"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer-when-downgrade"
+        X-Robots-Tag "noindex, nofollow"
+        
+        # Remove server header
+        -Server
+    }
+
+    # Enable compression
+    encode gzip zstd
+
+    # Health check endpoint
+    respond /health "healthy" 200
+
+    # API routes - Backend FastAPI
+    handle_path /api/* {
+        reverse_proxy backend:8000 {
+            # Health check
+            health_uri /health
+            health_interval 30s
+            health_timeout 10s
+            
+            # Headers
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Port {server_port}
+        }
+    }
+
+    # Airflow Web UI
+    handle_path /airflow/* {
+        reverse_proxy airflow_standalone:8080 {
+            # Headers for Airflow
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Port {server_port}
+            header_up X-Script-Name /airflow
+        }
+    }
+
+    # Grafana Monitoring
+    handle_path /grafana/* {
+        reverse_proxy grafana:3001 {
+            # Headers for Grafana
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Port {server_port}
+            header_up X-Forwarded-Server {host}
+        }
+    }
+
+    # MLflow (internal access through API if needed)
+    handle_path /mlflow/* {
+        reverse_proxy mlflow:5001 {
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Static assets optimization
+    @static {
+        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
+    }
+    handle @static {
+        header Cache-Control "public, max-age=31536000, immutable"
+        reverse_proxy frontend:3000
+    }
+
+    # Next.js frontend - Default route (must be last)
+    handle {
+        reverse_proxy frontend:3000 {
+            # Health check for frontend
+            health_uri /
+            health_interval 30s
+            health_timeout 10s
+            
+            # Headers for Next.js
+            header_up Host {upstream_hostport}
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            header_up X-Forwarded-Port {server_port}
+            
+            # WebSocket support for Next.js hot reload (if needed)
+            header_up Upgrade {http.request.header.Upgrade}
+            header_up Connection {http.request.header.Connection}
+        }
+    }
+}
+
+# Production domain configuration (uncomment and modify for your domain)
+# your-domain.com {
+#     # Automatic HTTPS with Let's Encrypt
+#     
+#     # Enable logging
+#     log {
+#         output file /var/log/caddy/access.log
+#         format json
+#     }
+#
+#     # Same configuration as localhost above
+#     # ... (copy the configuration from localhost block)
+# }
+
+# Alternative: Environment-based domain configuration
+# {$DOMAIN:localhost} {
+#     # This allows setting domain via environment variable
+#     # Usage: DOMAIN=your-domain.com docker-compose up
+#     
+#     # Same configuration as above
+# }

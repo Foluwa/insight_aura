@@ -1,0 +1,50 @@
+# caddy/Caddyfile.simple
+# Simplified Caddy configuration - easier to understand and maintain
+
+# Environment variable for domain (defaults to localhost)
+{$DOMAIN:localhost} {
+    
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+    }
+
+    # Compression
+    encode gzip
+
+    # Security headers
+    header {
+        X-Frame-Options SAMEORIGIN
+        X-Content-Type-Options nosniff
+        -Server
+    }
+
+    # Health endpoint
+    respond /health 200 {
+        body "healthy"
+    }
+
+    # Backend API
+    reverse_proxy /api/* backend:8000
+
+    # Airflow
+    reverse_proxy /airflow/* airflow_standalone:8080
+
+    # Grafana  
+    reverse_proxy /grafana/* grafana:3001
+
+    # MLflow (optional)
+    reverse_proxy /mlflow/* mlflow:5001
+
+    # Frontend (Next.js) - catch all remaining routes
+    reverse_proxy frontend:3000
+}
+
+# For production with automatic HTTPS, replace localhost with your domain:
+# mydomain.com {
+#     # Same configuration as above
+#     reverse_proxy /api/* backend:8000
+#     reverse_proxy /airflow/* airflow_standalone:8080
+#     reverse_proxy /grafana/* grafana:3001
+#     reverse_proxy frontend:3000
+# }

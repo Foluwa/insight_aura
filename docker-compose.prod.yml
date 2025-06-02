@@ -1,0 +1,218 @@
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  # Frontend - Next.js Application (Production Mode)
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        - NEXT_PUBLIC_API_URL=http://localhost/api
+        - NEXT_PUBLIC_APP_ENV=production
+    container_name: insightaura_frontend_prod
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=http://localhost/api
+      - NEXT_PUBLIC_APP_ENV=production
+      - NEXT_PUBLIC_AIRFLOW_URL=http://localhost/airflow
+      - NEXT_PUBLIC_GRAFANA_URL=http://localhost/grafana
+      - NEXT_PUBLIC_MLFLOW_URL=http://localhost/mlflow
+    # No volume mounts in production - using built image
+    networks:
+      - insightaura_network
+    command: node server.js  # Production server
+
+  # Caddy for production reverse proxy
+  caddy:
+    image: caddy:2-alpine
+    container_name: insightaura_caddy_prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"  # For HTTP/3
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - insightaura_caddy_data:/data
+      - insightaura_caddy_config:/config
+      - insightaura_caddy_logs:/var/log/caddy
+    depends_on:
+      - frontend
+      - backend
+      - airflow_standalone
+    networks:
+      - insightaura_network
+    environment:
+      - CADDY_INGRESS_NETWORKS=insightaura_network
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  backend:
+    image: python:3.9-slim
+    container_name: insightaura_backend_prod
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    working_dir: /app
+    command: sh -c "
+      pip install --no-cache-dir -r requirements.txt && 
+      python -c 'import asyncio; from backend.database.migration_runner import run_migrations; asyncio.run(run_migrations())' &&
+      python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+      "
+    # No exposed ports in production - accessed through caddy
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      # CORS configuration for production
+      - CORS_ORIGINS=http://localhost,https://localhost,https://${DOMAIN:-localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:13
+    container_name: insightaura_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_MULTIPLE_DATABASES: airflow,insightaura_db
+    # No exposed ports in production
+    networks:
+      - insightaura_network
+    volumes:
+      - insightaura_postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow_standalone:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: insightaura_airflow_prod
+    command: standalone
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/plugins:/opt/airflow/plugins
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - insightaura_airflow_data_prod:/opt/airflow
+    # No exposed ports in production - accessed through caddy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__EXPOSE_CONFIG=true
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY:-changeme}
+      - AIRFLOW__WEBSERVER__LOG_SERVE_HOST=0.0.0.0
+      - AIRFLOW__WEBSERVER__LOG_SERVE_PORT=8793
+      - AIRFLOW__LOGGING__BASE_LOG_FOLDER=/opt/airflow/logs
+      # Production reverse proxy configuration
+      - AIRFLOW__WEBSERVER__BASE_URL=http://localhost/airflow
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+
+  mlflow:
+    image: python:3.9-slim
+    container_name: insightaura_mlflow_prod
+    volumes:
+      - ./mlflow_data:/mlflow_data
+      - ./data/mlflow:/data/mlflow
+    working_dir: /mlflow_data
+    command: sh -c "
+      mkdir -p /data/mlflow &&
+      mkdir -p /mlflow_data/artifacts &&
+      mkdir -p /mlflow_data/models &&
+      pip install --no-cache-dir mlflow &&
+      mlflow server 
+        --host 0.0.0.0 
+        --port 5001 
+        --backend-store-uri sqlite:////data/mlflow/mlflow.db
+        --default-artifact-root /mlflow_data/artifacts
+        --serve-artifacts
+      "
+    # No exposed ports in production - internal access only
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: insightaura_grafana_prod
+    # No exposed ports in production - accessed through caddy
+    volumes:
+      - ./infrastructure/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - insightaura_grafana_data_prod:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      # Production reverse proxy configuration for Caddy
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: insightaura_prometheus_prod
+    # No exposed ports in production - internal access only
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - insightaura_prometheus_data_prod:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+
+volumes:
+  insightaura_postgres_data_prod:
+  insightaura_prometheus_data_prod:
+  insightaura_grafana_data_prod:
+  insightaura_mlflow_data_prod:
+  insightaura_airflow_data_prod:
+  insightaura_caddy_data:
+  insightaura_caddy_config:
+  insightaura_caddy_logs:
+
+networks:
+  insightaura_network:
+    driver: bridge
