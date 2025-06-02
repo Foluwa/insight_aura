@@ -1,0 +1,72 @@
+FROM python:3.9-slim
+
+# Accept build arguments for proxies
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+
+# Set proxy environment variables if provided
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV http_proxy=${HTTP_PROXY}
+ENV https_proxy=${HTTPS_PROXY}
+
+WORKDIR /app
+
+# Install system dependencies with retry mechanism
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    libpq-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first to leverage Docker cache
+COPY requirements.txt .
+
+# Install Python packages with retry mechanism
+RUN pip install --no-cache-dir --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host pypi.org -r requirements.txt || \
+    (sleep 5 && pip install --no-cache-dir --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host pypi.org -r requirements.txt) || \
+    (sleep 15 && pip install --no-cache-dir --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host pypi.org -r requirements.txt)
+
+# Install MLflow separately to ensure it's installed properly
+RUN pip install --no-cache-dir --trusted-host pypi.python.org --trusted-host files.pythonhosted.org --trusted-host pypi.org mlflow==2.8.0
+
+# Copy MLflow configuration
+COPY backend/mlflow_server /app/mlflow_server
+
+# Reset proxy settings to avoid issues
+ENV HTTP_PROXY=
+ENV HTTPS_PROXY=
+ENV http_proxy=
+ENV https_proxy=
+
+# Expose MLflow UI port
+EXPOSE 5001
+
+# Start MLflow server
+CMD ["mlflow", "server", "--host", "0.0.0.0", "--port", "5001", "--backend-store-uri", "sqlite:///mlflow.db", "--default-artifact-root", "./mlruns"]
+
+# FROM python:3.9-slim
+
+# WORKDIR /app
+
+# # Install system dependencies
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#     build-essential \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/*
+
+# # Install MLflow and other dependencies
+# COPY requirements.txt .
+# RUN pip install --no-cache-dir -r requirements.txt
+
+# # Expose MLflow UI port
+# EXPOSE 5001
+
+# # Start MLflow server
+# CMD ["mlflow", "server", \
+#      "--host", "0.0.0.0", \
+#      "--port", "5001", \
+#      "--backend-store-uri", "${MLFLOW_BACKEND_STORE_URI:-./mlruns}", \
+#      "--default-artifact-root", "${MLFLOW_ARTIFACT_ROOT:-./mlruns}"]

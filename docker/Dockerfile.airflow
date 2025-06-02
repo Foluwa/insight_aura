@@ -1,0 +1,114 @@
+# # Use the latest Apache Airflow 3.0.1 with Python 3.12 (default)
+# FROM apache/airflow:3.0.1
+
+# USER root
+
+# # Install system dependencies
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#     build-essential \
+#     curl \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/*
+
+# USER airflow
+
+# # Copy and install Python packages as airflow user
+# # Airflow 3.0.1 uses official constraints which should resolve Flask compatibility issues
+# COPY --chown=airflow:root requirements.txt /requirements.txt
+# RUN pip install --no-cache-dir \
+#     -r /requirements.txt \
+#     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-3.0.1/constraints-3.12.txt"
+
+# USER root
+
+# # Copy the entire backend directory and set ownership
+# COPY ./backend /opt/airflow/backend
+# RUN chown -R airflow:root /opt/airflow/backend
+
+# # Copy DAGs and plugins specifically and set ownership
+# COPY ./backend/airflow/dags /opt/airflow/dags
+# COPY ./backend/airflow/plugins /opt/airflow/plugins
+# RUN chown -R airflow:root /opt/airflow/dags
+# RUN chown -R airflow:root /opt/airflow/plugins
+
+# # Create __init__.py files and set ownership
+# RUN touch /opt/airflow/__init__.py && chown airflow:root /opt/airflow/__init__.py
+# RUN touch /opt/airflow/backend/__init__.py && chown airflow:root /opt/airflow/backend/__init__.py
+
+# USER airflow
+
+# # Set Python path to include the backend modules
+# ENV PYTHONPATH="/opt/airflow:/opt/airflow/backend:${PYTHONPATH}"
+
+# WORKDIR /opt/airflow
+
+
+
+# Use Airflow 3.0.1 base image - it already has compatible packages
+FROM apache/airflow:3.0.1
+
+USER root
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+
+# Install your custom requirements WITHOUT constraints
+# Let Airflow's base image handle the core dependencies
+COPY --chown=airflow:root requirements.txt /requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt
+
+USER root
+
+# Copy the entire backend directory and set ownership
+COPY ./backend /opt/airflow/backend
+RUN chown -R airflow:root /opt/airflow/backend
+
+# Copy DAGs and plugins specifically and set ownership
+COPY ./backend/airflow/dags /opt/airflow/dags
+COPY ./backend/airflow/plugins /opt/airflow/plugins
+RUN chown -R airflow:root /opt/airflow/dags
+RUN chown -R airflow:root /opt/airflow/plugins
+
+# Create __init__.py files and set ownership
+RUN touch /opt/airflow/__init__.py && chown airflow:root /opt/airflow/__init__.py
+RUN touch /opt/airflow/backend/__init__.py && chown airflow:root /opt/airflow/backend/__init__.py
+
+USER airflow
+
+# Set Python path to include the backend modules
+ENV PYTHONPATH="/opt/airflow:/opt/airflow/backend:${PYTHONPATH}"
+
+WORKDIR /opt/airflow
+
+
+# FROM apache/airflow:2.7.1
+
+# USER root
+
+# # Install system dependencies
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#     build-essential \
+#     && apt-get clean \
+#     && rm -rf /var/lib/apt/lists/*
+
+# USER airflow
+
+# # Install Python packages
+# COPY requirements.txt /requirements.txt
+# RUN pip install --no-cache-dir -r /requirements.txt
+
+
+# # Copy DAGs and plugins
+# COPY ./airflow/dags /opt/airflow/dags
+# COPY ./airflow/plugins /opt/airflow/plugins
+
+# WORKDIR /opt/airflow

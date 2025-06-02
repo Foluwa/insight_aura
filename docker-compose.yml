@@ -1,0 +1,299 @@
+version: '3.8'
+
+services:
+  backend:
+    image: python:3.9-slim
+    container_name: backend
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    working_dir: /app
+    command: sh -c "
+      pip install --no-cache-dir -r requirements.txt && 
+      python -c 'import asyncio; from backend.database.migration_runner import run_migrations; asyncio.run(run_migrations())' &&
+      python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+      "
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  airflow_init_auth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_init_auth
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "🔧 Setting up Airflow authentication with env vars..."
+        
+        # Wait for database to be ready
+        sleep 10
+        
+        # Initialize database
+        airflow db init
+        
+        # Delete existing users if they exist
+        airflow users delete --username "${AIRFLOW_ADMIN_USERNAME}" 2>/dev/null || true
+        airflow users delete --username "${AIRFLOW_USER_USERNAME}" 2>/dev/null || true
+        
+        # Create admin user from environment variables
+        echo "👤 Creating admin user: ${AIRFLOW_ADMIN_USERNAME}"
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USERNAME}" \
+          --firstname "${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "${AIRFLOW_ADMIN_LASTNAME}" \
+          --role "${AIRFLOW_ADMIN_ROLE}" \
+          --email "${AIRFLOW_ADMIN_EMAIL}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
+          --use-random-password false
+        
+        # Create additional user if configured
+        if [ -n "${AIRFLOW_USER_USERNAME}" ]; then
+          echo "👤 Creating user: ${AIRFLOW_USER_USERNAME}"
+          airflow users create \
+            --username "${AIRFLOW_USER_USERNAME}" \
+            --firstname "${AIRFLOW_USER_FIRSTNAME}" \
+            --lastname "${AIRFLOW_USER_LASTNAME}" \
+            --role "${AIRFLOW_USER_ROLE}" \
+            --email "${AIRFLOW_USER_EMAIL}" \
+            --password "${AIRFLOW_USER_PASSWORD}" \
+            --use-random-password false
+        fi
+        
+        # List users for verification
+        echo "📋 Created users:"
+        airflow users list
+        
+        echo "✅ Authentication setup completed!"
+        echo "🔑 Admin: ${AIRFLOW_ADMIN_USERNAME}/${AIRFLOW_ADMIN_PASSWORD}"
+        if [ -n "${AIRFLOW_USER_USERNAME}" ]; then
+          echo "🔑 User: ${AIRFLOW_USER_USERNAME}/${AIRFLOW_USER_PASSWORD}"
+        fi
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      
+      # Pass environment variables from .env
+      - AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
+      - AIRFLOW_ADMIN_FIRSTNAME=${AIRFLOW_ADMIN_FIRSTNAME}
+      - AIRFLOW_ADMIN_LASTNAME=${AIRFLOW_ADMIN_LASTNAME}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL}
+      - AIRFLOW_ADMIN_ROLE=${AIRFLOW_ADMIN_ROLE}
+      - AIRFLOW_USER_USERNAME=${AIRFLOW_USER_USERNAME}
+      - AIRFLOW_USER_PASSWORD=${AIRFLOW_USER_PASSWORD}
+      - AIRFLOW_USER_FIRSTNAME=${AIRFLOW_USER_FIRSTNAME}
+      - AIRFLOW_USER_LASTNAME=${AIRFLOW_USER_LASTNAME}
+      - AIRFLOW_USER_EMAIL=${AIRFLOW_USER_EMAIL}
+      - AIRFLOW_USER_ROLE=${AIRFLOW_USER_ROLE}
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    networks:
+      - app_network
+
+  # Main Airflow standalone service
+  airflow_standalone:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_standalone
+    command: standalone
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/plugins:/opt/airflow/plugins
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    ports:
+      - "8080:8080"
+      - "8793:8793"
+    environment:
+      # Airflow 3.0.1 Configuration
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__EXPOSE_CONFIG=true
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__AUTHENTICATE=true
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
+      
+      # Python path for backend modules
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      
+      # Application Environment Variables
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+
+      
+      
+      
+      # LOG SERVER CONFIGURATION - Add these lines
+      - AIRFLOW__LOGGING__REMOTE_LOGGING=false
+      - AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID=
+      - AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER=
+      - AIRFLOW__LOGGING__ENCRYPT_S3_LOGS=false
+      
+      # WEBSERVER LOG CONFIGURATION
+      - AIRFLOW__WEBSERVER__BASE_URL=http://localhost:8080
+      - AIRFLOW__WEBSERVER__LOG_SERVE_HOST=localhost
+      - AIRFLOW__WEBSERVER__LOG_SERVE_PORT=8793
+      
+      # API SERVER LOG CONFIGURATION  
+      - AIRFLOW__API__LOG_SERVE_HOST=localhost
+      - AIRFLOW__API__LOG_SERVE_PORT=8793
+      
+      # CORE LOGGING CONFIGURATION
+      - AIRFLOW__CORE__HOSTNAME_CALLABLE=airflow.utils.net.get_host_ip_address
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - AIRFLOW__LOGGING__BASE_LOG_FOLDER=/opt/airflow/logs
+      
+      # SCHEDULER CONFIGURATION
+      - AIRFLOW__SCHEDULER__LOG_SERVE_HOST=localhost
+      - AIRFLOW__SCHEDULER__LOG_SERVE_PORT=8793
+    depends_on:
+      airflow_init_auth:
+        condition: service_completed_successfully
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+
+  mlflow:
+    image: python:3.9-slim
+    container_name: mlflow
+    volumes:
+      - ./mlflow_data:/mlflow_data
+      - ./data/mlflow:/data/mlflow
+    working_dir: /mlflow_data
+    command: sh -c "
+      mkdir -p /data/mlflow &&
+      mkdir -p /mlflow_data/artifacts &&
+      mkdir -p /mlflow_data/models &&
+      pip install --no-cache-dir mlflow &&
+      mlflow server 
+        --host 0.0.0.0 
+        --port 5001 
+        --backend-store-uri sqlite:////data/mlflow/mlflow.db
+        --default-artifact-root /mlflow_data/artifacts
+        --serve-artifacts
+      "
+    ports:
+      - "5001:5001"
+    networks:
+      - app_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:5001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=sqlite:////data/mlflow/mlflow.db
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow_data/artifacts
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./infrastructure/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    networks:
+      - app_network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_MULTIPLE_DATABASES: airflow,sentiment_db
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  mlflow_data:
+  airflow_data:
