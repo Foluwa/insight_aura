@@ -1,5 +1,5 @@
 
-# 📱 Sentiment Analysis Platform
+# 📱 Insight Aura
 
 A fullstack platform to scrape app reviews from Google Play and Apple App Store, perform sentiment analysis using fine-tuned BERT models, compare applications, track model performance, and monitor infrastructure — scalable and production-ready.
 

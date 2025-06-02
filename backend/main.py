@@ -20,9 +20,9 @@ if SENTRY_DSN:
 
 # Initialize FastAPI app with lifespan handler
 app = FastAPI(
-    title="Sentiment Analysis Platform API",
+    title="Insight Aura API",
     version="1.0.0",
-    description="API for scraping app reviews and performing sentiment analysis.",
+    description="API for reviews and sentiment analysis.",
     lifespan=lifespan
 )
 
