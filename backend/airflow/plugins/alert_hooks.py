@@ -1,28 +1,26 @@
 from airflow.models import TaskInstance
 from airflow.utils.state import State
-from backend.api.utils.notification import (
-    send_telegram_alert,
-    send_slack_alert,
-    send_email_alert
-)
 
 def failure_alert_callback(context):
+    """Basic failure alert callback"""
     task_instance: TaskInstance = context.get("task_instance")
     dag_id = context.get("dag").dag_id
     task_id = task_instance.task_id
     error = context.get("exception")
+    
+    print(f"❌ Task failed: {dag_id}.{task_id} - Error: {str(error)}")
 
-    message = f"""
-❌ Airflow Task Failed
-DAG: {dag_id}
-Task: {task_id}
-Error: {str(error)}
-"""
+def enhanced_failure_alert_callback(context):
+    """Enhanced failure alert callback - alias for backward compatibility"""
+    return failure_alert_callback(context)
 
-    send_telegram_alert(message)
-    send_slack_alert(message)
-    send_email_alert(
-        subject=f"❌ Airflow Task Failed — {dag_id}.{task_id}",
-        body=message,
-        to="you@example.com"
-    )
+def success_alert_callback(context):
+    """Basic success alert callback"""
+    task_instance: TaskInstance = context.get("task_instance")
+    dag_id = context.get("dag").dag_id
+    task_id = task_instance.task_id
+    
+    print(f"✅ Task succeeded: {dag_id}.{task_id}")
+
+# Backward compatibility
+enhanced_failure_alert_callback = failure_alert_callback

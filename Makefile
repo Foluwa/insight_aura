@@ -77,6 +77,19 @@ down: ## 🛑 Stop all services
 	@docker-compose down
 	@echo "✅ All services stopped"
 
+# kill-all: ## Emergency stop - remove ALL containers and volumes
+# 	@echo "⚠️  WARNING: This will delete ALL containers, volumes, and networks."
+# 	@read -p "Are you in a dev environment and sure you want to continue? (yes/no): " confirm; \
+# 	if [ "$$confirm" = "yes" ]; then \
+# 		echo "🧨 Stopping and removing everything..."; \
+# 		docker-compose down -v --remove-orphans; \
+# 		docker system prune -f; \
+# 		echo "✅ Done. Everything removed."; \
+# 	else \
+# 		echo "❌ Aborted."; \
+# 	fi
+
+
 # ========================
 # System Management
 # ========================
@@ -122,7 +135,7 @@ logs: ## 📝 Show logs from all services
 	@docker-compose logs -f --tail=50
 
 logs-airflow: ## 📝 Show Airflow logs only
-	@docker-compose logs -f airflow_webserver airflow_scheduler
+	@docker-compose logs -f airflow_standalone airflow_scheduler
 
 logs-backend: ## 📝 Show Backend API logs only
 	@docker-compose logs -f backend
@@ -157,11 +170,11 @@ test: ## 🧪 Run tests (dev)
 	@$(VENV_ACTIVATE) && pytest backend/tests/ -v
 
 shell: ## 🐚 Open Airflow container shell (dev)
-	@docker-compose exec airflow_webserver bash
+	@docker-compose exec airflow_standalone bash
 
 debug: ## 🐛 Debug Airflow DAG imports and dependencies
 	@echo "🐛 Debugging Airflow setup..."
-	@docker-compose run --rm airflow_webserver bash -c '\
+	@docker-compose run --rm airflow_standalone bash -c '\
 		export PYTHONPATH="/opt/airflow:/opt/airflow/backend:$$PYTHONPATH"; \
 		echo "🐍 Python Path:"; python -c "import sys; [print(p) for p in sys.path]"; \
 		echo ""; echo "🧪 Testing imports:"; \
@@ -249,7 +262,7 @@ restart: ## 🔄 Restart all services
 	@$(MAKE) --no-print-directory status
 
 restart-airflow: ## 🔄 Restart Airflow services only
-	@docker-compose restart airflow_webserver airflow_scheduler
+	@docker-compose restart airflow_standalone airflow_scheduler
 
 restart-backend: ## 🔄 Restart Backend service only
 	@docker-compose restart backend
@@ -281,7 +294,7 @@ _setup-dirs:
 _setup-configs:
 	@echo "⚙️ Creating default configuration files..."
 	@if [ ! -f "backend/monitoring/prometheus/prometheus.yml" ]; then \
-		printf "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\n\nscrape_configs:\n  - job_name: 'prometheus'\n    static_configs:\n      - targets: ['localhost:9090']\n\n  - job_name: 'airflow'\n    static_configs:\n      - targets: ['airflow_webserver:8080']\n    metrics_path: '/admin/metrics'\n    scrape_interval: 30s\n\n  - job_name: 'backend'\n    static_configs:\n      - targets: ['backend:8000']\n    metrics_path: '/metrics'\n    scrape_interval: 30s\n" > backend/monitoring/prometheus/prometheus.yml; \
+		printf "global:\n  scrape_interval: 15s\n  evaluation_interval: 15s\n\nscrape_configs:\n  - job_name: 'prometheus'\n    static_configs:\n      - targets: ['localhost:9090']\n\n  - job_name: 'airflow'\n    static_configs:\n      - targets: ['airflow_standalone:8080']\n    metrics_path: '/admin/metrics'\n    scrape_interval: 30s\n\n  - job_name: 'backend'\n    static_configs:\n      - targets: ['backend:8000']\n    metrics_path: '/metrics'\n    scrape_interval: 30s\n" > backend/monitoring/prometheus/prometheus.yml; \
 		echo "✅ Created Prometheus config"; \
 	fi
 	@if [ ! -f "backend/monitoring/grafana/grafana.ini" ]; then \
@@ -307,7 +320,7 @@ _wait-postgres:
 	done; echo "✅ PostgreSQL ready"
 
 _install-deps-quiet:
-	@docker-compose run --rm airflow_webserver bash -c '\
+	@docker-compose run --rm airflow_standalone bash -c '\
 		pip install --no-cache-dir --quiet \
 			sentry-sdk[logging] mlflow asyncpg aiohttp \
 			app-store-web-scraper google-play-scraper \
@@ -315,7 +328,7 @@ _install-deps-quiet:
 		>/dev/null 2>&1 && echo "✅ Dependencies installed" || echo "⚠️ Some dependencies failed"' 2>/dev/null
 
 _init-airflow:
-	@docker-compose run --rm airflow_webserver bash -c '\
+	@docker-compose run --rm airflow_standalone bash -c '\
 		export PYTHONPATH="/opt/airflow:/opt/airflow/backend:$$PYTHONPATH"; \
 		if airflow db check 2>&1 | grep -q "Connection is ok"; then \
 			echo "✅ Airflow already initialized"; \

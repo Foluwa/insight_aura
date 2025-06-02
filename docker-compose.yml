@@ -19,7 +19,6 @@ services:
       - DATABASE_URL=${DATABASE_URL}
       - SENTRY_DSN=${SENTRY_DSN}
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      # Add all necessary environment variables for scraping
       - PROXY_ENABLED=${PROXY_ENABLED:-false}
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
@@ -34,137 +33,157 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Airflow Initialization Service
-  airflow_init:
-    image: apache/airflow:2.7.1
-    container_name: airflow_init
+  airflow_init_auth:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_init_auth
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        # Install additional packages
-        pip install --no-cache-dir -r /requirements.txt
+        echo "🔧 Setting up Airflow authentication with env vars..."
         
-        # Initialize Airflow database
+        # Wait for database to be ready
+        sleep 10
+        
+        # Initialize database
         airflow db init
         
-        # Create admin user
+        # Delete existing users if they exist
+        airflow users delete --username "${AIRFLOW_ADMIN_USERNAME}" 2>/dev/null || true
+        airflow users delete --username "${AIRFLOW_USER_USERNAME}" 2>/dev/null || true
+        
+        # Create admin user from environment variables
+        echo "👤 Creating admin user: ${AIRFLOW_ADMIN_USERNAME}"
         airflow users create \
-          --username admin \
-          --firstname Admin \
-          --lastname User \
-          --role Admin \
-          --email admin@example.com \
-          --password admin
+          --username "${AIRFLOW_ADMIN_USERNAME}" \
+          --firstname "${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "${AIRFLOW_ADMIN_LASTNAME}" \
+          --role "${AIRFLOW_ADMIN_ROLE}" \
+          --email "${AIRFLOW_ADMIN_EMAIL}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
+          --use-random-password false
         
-        # Set up enterprise Airflow Variables
-        airflow variables set ENVIRONMENT "${ENVIRONMENT:-production}"
-        airflow variables set PROXY_ENABLED "${PROXY_ENABLED:-false}"
-        airflow variables set HTTP_PROXY "${HTTP_PROXY:-}"
-        airflow variables set HTTPS_PROXY "${HTTPS_PROXY:-}"
-        airflow variables set TELEGRAM_ALERTS_ENABLED "${TELEGRAM_ALERTS_ENABLED:-false}"
-        airflow variables set SLACK_ALERTS_ENABLED "${SLACK_ALERTS_ENABLED:-false}"
-        airflow variables set SUCCESS_NOTIFICATIONS_ENABLED "true"
-        airflow variables set SCRAPER_MAX_RETRIES "3"
-        airflow variables set RATE_LIMIT_DELAY "1.5"
-        airflow variables set SCRAPER_TIMEOUT "60"
-        airflow variables set DATA_RETENTION_DAYS "90"
-        airflow variables set REVIEW_RETENTION_DAYS "365"
-        airflow variables set CLEANUP_OLD_REVIEWS "false"
+        # Create additional user if configured
+        if [ -n "${AIRFLOW_USER_USERNAME}" ]; then
+          echo "👤 Creating user: ${AIRFLOW_USER_USERNAME}"
+          airflow users create \
+            --username "${AIRFLOW_USER_USERNAME}" \
+            --firstname "${AIRFLOW_USER_FIRSTNAME}" \
+            --lastname "${AIRFLOW_USER_LASTNAME}" \
+            --role "${AIRFLOW_USER_ROLE}" \
+            --email "${AIRFLOW_USER_EMAIL}" \
+            --password "${AIRFLOW_USER_PASSWORD}" \
+            --use-random-password false
+        fi
         
-        echo "✅ Airflow initialization completed!"
+        # List users for verification
+        echo "📋 Created users:"
+        airflow users list
+        
+        echo "✅ Authentication setup completed!"
+        echo "🔑 Admin: ${AIRFLOW_ADMIN_USERNAME}/${AIRFLOW_ADMIN_PASSWORD}"
+        if [ -n "${AIRFLOW_USER_USERNAME}" ]; then
+          echo "🔑 User: ${AIRFLOW_USER_USERNAME}/${AIRFLOW_USER_PASSWORD}"
+        fi
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      
+      # Pass environment variables from .env
+      - AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
+      - AIRFLOW_ADMIN_FIRSTNAME=${AIRFLOW_ADMIN_FIRSTNAME}
+      - AIRFLOW_ADMIN_LASTNAME=${AIRFLOW_ADMIN_LASTNAME}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL}
+      - AIRFLOW_ADMIN_ROLE=${AIRFLOW_ADMIN_ROLE}
+      - AIRFLOW_USER_USERNAME=${AIRFLOW_USER_USERNAME}
+      - AIRFLOW_USER_PASSWORD=${AIRFLOW_USER_PASSWORD}
+      - AIRFLOW_USER_FIRSTNAME=${AIRFLOW_USER_FIRSTNAME}
+      - AIRFLOW_USER_LASTNAME=${AIRFLOW_USER_LASTNAME}
+      - AIRFLOW_USER_EMAIL=${AIRFLOW_USER_EMAIL}
+      - AIRFLOW_USER_ROLE=${AIRFLOW_USER_ROLE}
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    networks:
+      - app_network
+
+  # Main Airflow standalone service
+  airflow_standalone:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: airflow_standalone
+    command: standalone
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
       - ./backend/airflow/logs:/opt/airflow/logs
       - ./backend:/opt/airflow/backend
-      - ./requirements.txt:/requirements.txt
-      - ./.env:/opt/airflow/.env
-    environment: &airflow-common-env
-      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY:-ZmDfcTF7_60GrrY167zsiPd67pEvs0aGOv2oasOM1Pg=}
+      - airflow_data:/opt/airflow
+    ports:
+      - "8080:8080"
+      - "8793:8793"
+    environment:
+      # Airflow 3.0.1 Configuration
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
-      - AIRFLOW__WEBSERVER__EXPOSE_CONFIG=true
+      - AIRFLOW__API__EXPOSE_CONFIG=true
       - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__AUTHENTICATE=true
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
       
-      # Enterprise Configuration
-      - AIRFLOW__SCHEDULER__DAG_DIR_LIST_INTERVAL=30
-      - AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT=false
-      - AIRFLOW__CORE__PARALLELISM=8
-      - AIRFLOW__CORE__DAG_CONCURRENCY=4
-      - AIRFLOW__CORE__MAX_ACTIVE_RUNS_PER_DAG=1
+      # Python path for backend modules
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
       
       # Application Environment Variables
       - DATABASE_URL=${DATABASE_URL}
       - SENTRY_DSN=${SENTRY_DSN}
-      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - ENVIRONMENT=${ENVIRONMENT:-development}
       - PROXY_ENABLED=${PROXY_ENABLED:-false}
       - HTTP_PROXY=${HTTP_PROXY}
       - HTTPS_PROXY=${HTTPS_PROXY}
+
       
-      # Notification Configuration
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-      - SMTP_HOST=${SMTP_HOST}
-      - SMTP_USER=${SMTP_USER}
-      - SMTP_PASS=${SMTP_PASS}
-      - EMAIL_FROM=${EMAIL_FROM}
-      - TELEGRAM_ALERTS_ENABLED=${TELEGRAM_ALERTS_ENABLED:-false}
-      - SLACK_ALERTS_ENABLED=${SLACK_ALERTS_ENABLED:-false}
+      
+      
+      # LOG SERVER CONFIGURATION - Add these lines
+      - AIRFLOW__LOGGING__REMOTE_LOGGING=false
+      - AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID=
+      - AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER=
+      - AIRFLOW__LOGGING__ENCRYPT_S3_LOGS=false
+      
+      # WEBSERVER LOG CONFIGURATION
+      - AIRFLOW__WEBSERVER__BASE_URL=http://localhost:8080
+      - AIRFLOW__WEBSERVER__LOG_SERVE_HOST=localhost
+      - AIRFLOW__WEBSERVER__LOG_SERVE_PORT=8793
+      
+      # API SERVER LOG CONFIGURATION  
+      - AIRFLOW__API__LOG_SERVE_HOST=localhost
+      - AIRFLOW__API__LOG_SERVE_PORT=8793
+      
+      # CORE LOGGING CONFIGURATION
+      - AIRFLOW__CORE__HOSTNAME_CALLABLE=airflow.utils.net.get_host_ip_address
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - AIRFLOW__LOGGING__BASE_LOG_FOLDER=/opt/airflow/logs
+      
+      # SCHEDULER CONFIGURATION
+      - AIRFLOW__SCHEDULER__LOG_SERVE_HOST=localhost
+      - AIRFLOW__SCHEDULER__LOG_SERVE_PORT=8793
     depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - app_network
-
-  airflow_scheduler:
-    image: apache/airflow:2.7.1
-    container_name: airflow_scheduler
-    command: scheduler
-    volumes:
-      - ./backend/airflow/dags:/opt/airflow/dags
-      - ./backend/airflow/plugins:/opt/airflow/plugins
-      - ./backend/airflow/logs:/opt/airflow/logs
-      - ./backend:/opt/airflow/backend
-      - ./requirements.txt:/requirements.txt
-      - ./.env:/opt/airflow/.env
-    environment: *airflow-common-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      airflow_init:
-        condition: service_completed_successfully
-    networks:
-      - app_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  airflow_webserver:
-    image: apache/airflow:2.7.1
-    container_name: airflow_webserver
-    command: webserver
-    volumes:
-      - ./backend/airflow/dags:/opt/airflow/dags
-      - ./backend/airflow/plugins:/opt/airflow/plugins
-      - ./backend/airflow/logs:/opt/airflow/logs
-      - ./backend:/opt/airflow/backend
-      - ./requirements.txt:/requirements.txt
-      - ./.env:/opt/airflow/.env
-    ports:
-      - "8080:8080"
-    environment: *airflow-common-env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      airflow_init:
+      airflow_init_auth:
         condition: service_completed_successfully
     networks:
       - app_network
@@ -175,31 +194,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # Remove airflow_worker since we're using LocalExecutor, not CeleryExecutor
-
-  # mlflow:
-  #   image: python:3.9-slim
-  #   container_name: mlflow
-  #   volumes:
-  #     - .:/app
-  #     - ./mlflow_data:/mlflow_data
-  #   working_dir: /app
-  #   command: sh -c "
-  #     pip install --no-cache-dir mlflow psycopg2-binary &&
-  #     mlflow server 
-  #       --host 0.0.0.0 
-  #       --port 5001 
-  #       --backend-store-uri postgresql://airflow:airflow@postgres:5432/airflow
-  #       --default-artifact-root /mlflow_data/artifacts
-  #     "
-  #   ports:
-  #     - "5001:5001"
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #   networks:
-  #     - app_network
-  #   restart: unless-stopped
 
   mlflow:
     image: python:3.9-slim
@@ -232,7 +226,6 @@ services:
       retries: 3
       start_period: 40s
     environment:
-      # Set MLflow environment variables for consistency
       - MLFLOW_BACKEND_STORE_URI=sqlite:////data/mlflow/mlflow.db
       - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow_data/artifacts
 
@@ -288,14 +281,11 @@ services:
       - app_network
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      # - ./infrastructure/postgres/init-multiple-databases.sh:/docker-entrypoint-initdb.d/init-multiple-databases.sh
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U airflow"]
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # Remove Redis since we're using LocalExecutor
 
 networks:
   app_network:
@@ -306,162 +296,4 @@ volumes:
   prometheus_data:
   grafana_data:
   mlflow_data:
-
-# version: '3.8'
-
-# services:
-#   backend:
-#     # Instead of building, use a Python image directly
-#     image: python:3.9-slim
-#     container_name: backend
-#     volumes:
-#       - .:/app
-#     working_dir: /app
-#     command: sh -c "pip install -r requirements.txt && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-#     ports:
-#       - "8000:8000"
-#     environment:
-#       - DATABASE_URL=${DATABASE_URL}
-#       - SENTRY_DSN=${SENTRY_DSN}
-#     depends_on:
-#       - postgres
-#     networks:
-#       - app_network
-
-#   airflow_scheduler:
-#     # Use image directly instead of building
-#     image: apache/airflow:2.7.1
-#     container_name: airflow_scheduler
-#     command: scheduler
-#     volumes:
-#       - ./backend/airflow/dags:/opt/airflow/dags
-#       - ./backend/airflow/plugins:/opt/airflow/plugins
-#       - ./requirements.txt:/requirements.txt
-#     environment:
-#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-#       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-#       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-#       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-#       - SMTP_HOST=${SMTP_HOST}
-#       - SMTP_USER=${SMTP_USER}
-#       - SMTP_PASS=${SMTP_PASS}
-#       - EMAIL_FROM=${EMAIL_FROM}
-#     depends_on:
-#       - postgres
-#     networks:
-#       - app_network
-
-#   airflow_webserver:
-#     image: apache/airflow:2.7.1
-#     container_name: airflow_webserver
-#     command: webserver
-#     volumes:
-#       - ./backend/airflow/dags:/opt/airflow/dags
-#       - ./backend/airflow/plugins:/opt/airflow/plugins
-#       - ./requirements.txt:/requirements.txt
-#     ports:
-#       - "8080:8080"
-#     environment:
-#       - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-#       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-#       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-#       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-#       - SMTP_HOST=${SMTP_HOST}
-#       - SMTP_USER=${SMTP_USER}
-#       - SMTP_PASS=${SMTP_PASS}
-#       - EMAIL_FROM=${EMAIL_FROM}
-#     depends_on:
-#       - postgres
-#     networks:
-#       - app_network
-
-#   airflow_worker:
-#     # Use image directly instead of building
-#     image: apache/airflow:2.7.1
-#     container_name: airflow_worker
-#     command: celery worker
-#     volumes:
-#       - ./backend/airflow/dags:/opt/airflow/dags
-#       - ./backend/airflow/plugins:/opt/airflow/plugins
-#       - ./requirements.txt:/requirements.txt
-#     environment:
-#       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
-#       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
-#       - AIRFLOW__CELERY__BROKER_URL=redis://redis:6379/0
-#       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-#       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
-#       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-#       - SMTP_HOST=${SMTP_HOST}
-#       - SMTP_USER=${SMTP_USER}
-#       - SMTP_PASS=${SMTP_PASS}
-#       - EMAIL_FROM=${EMAIL_FROM}
-#     depends_on:
-#       - postgres
-#       - redis
-#     networks:
-#       - app_network
-
-#   mlflow:
-#     # Use Python image directly instead of building
-#     image: python:3.9-slim
-#     container_name: mlflow
-#     volumes:
-#       - .:/app
-#     working_dir: /app
-#     command: sh -c "pip install mlflow && mlflow server --host 0.0.0.0 --port 5001"
-#     ports:
-#       - "5001:5001"
-#     networks:
-#       - app_network
-
-#   prometheus:
-#     image: prom/prometheus
-#     container_name: prometheus
-#     ports:
-#       - "9090:9090"
-#     volumes:
-#       - ./backend/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-#     networks:
-#       - app_network
-
-#   grafana:
-#     image: grafana/grafana
-#     container_name: grafana
-#     ports:
-#       - "3000:3000"
-#     volumes:
-#       - ./backend/monitoring/grafana/grafana.ini:/etc/grafana/grafana.ini
-#       - ./backend/monitoring/grafana/dashboards:/etc/grafana/dashboards
-#       - ./backend/monitoring/grafana/provisioning:/etc/grafana/provisioning
-#     networks:
-#       - app_network
-
-#   postgres:
-#     image: postgres:13
-#     container_name: postgres
-#     restart: always
-#     environment:
-#       POSTGRES_USER: airflow
-#       POSTGRES_PASSWORD: airflow
-#       POSTGRES_DB: airflow
-#     ports:
-#       - "5432:5432"
-#     networks:
-#       - app_network
-#     volumes:
-#       - postgres_data:/var/lib/postgresql/data
-
-#   redis:
-#     image: redis:latest
-#     container_name: redis
-#     networks:
-#       - app_network
-
-# networks:
-#   app_network:
-#     driver: bridge
-
-# volumes:
-#   postgres_data:
+  airflow_data:

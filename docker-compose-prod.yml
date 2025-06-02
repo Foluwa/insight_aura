@@ -1,0 +1,262 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: sentiment_backend
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: sentiment_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=airflow
+      - POSTGRES_PASSWORD=airflow
+      - POSTGRES_DB=airflow
+      - POSTGRES_MULTIPLE_DATABASES=airflow,sentiment_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+    ports:
+      - "5432:5432"
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Airflow Database Initialization
+  airflow_init:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: sentiment_airflow_init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        echo "🔧 Initializing Airflow for production..."
+        airflow db init
+        
+        # Delete existing admin users
+        airflow users delete --username admin 2>/dev/null || true
+        airflow users delete --username "${AIRFLOW_ADMIN_USERNAME}" 2>/dev/null || true
+        
+        # Create admin user from environment variables
+        airflow users create \
+          --username "${AIRFLOW_ADMIN_USERNAME}" \
+          --firstname "${AIRFLOW_ADMIN_FIRSTNAME}" \
+          --lastname "${AIRFLOW_ADMIN_LASTNAME}" \
+          --role Admin \
+          --email "${AIRFLOW_ADMIN_EMAIL}" \
+          --password "${AIRFLOW_ADMIN_PASSWORD}" \
+          --use-random-password false
+        
+        echo "✅ Airflow initialization completed!"
+    environment: &airflow-common-env
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__EXPOSE_CONFIG=true
+      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY}
+      - AIRFLOW__CORE__FERNET_KEY=${AIRFLOW_FERNET_KEY}
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      
+      # User credentials
+      - AIRFLOW_ADMIN_USERNAME=${AIRFLOW_ADMIN_USERNAME}
+      - AIRFLOW_ADMIN_PASSWORD=${AIRFLOW_ADMIN_PASSWORD}
+      - AIRFLOW_ADMIN_FIRSTNAME=${AIRFLOW_ADMIN_FIRSTNAME}
+      - AIRFLOW_ADMIN_LASTNAME=${AIRFLOW_ADMIN_LASTNAME}
+      - AIRFLOW_ADMIN_EMAIL=${AIRFLOW_ADMIN_EMAIL}
+      
+      # Application environment
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+
+  # Airflow Scheduler
+  airflow_scheduler:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: sentiment_airflow_scheduler
+    command: scheduler
+    restart: unless-stopped
+    environment: *airflow-common-env
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    depends_on:
+      airflow_init:
+        condition: service_completed_successfully
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type SchedulerJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Airflow API Server
+  airflow_api_server:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: sentiment_airflow_api
+    command: api-server
+    restart: unless-stopped
+    environment: *airflow-common-env
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    ports:
+      - "8080:8080"
+    depends_on:
+      airflow_init:
+        condition: service_completed_successfully
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Airflow Triggerer
+  airflow_triggerer:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: sentiment_airflow_triggerer
+    command: triggerer
+    restart: unless-stopped
+    environment: *airflow-common-env
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - airflow_data:/opt/airflow
+    depends_on:
+      airflow_init:
+        condition: service_completed_successfully
+    networks:
+      - app_network
+
+  # MLflow Server
+  mlflow:
+    image: python:3.12-slim
+    container_name: sentiment_mlflow
+    restart: unless-stopped
+    volumes:
+      - mlflow_data:/mlflow_data
+      - ./data/mlflow:/data/mlflow
+    working_dir: /mlflow_data
+    command: sh -c "
+      pip install --no-cache-dir mlflow &&
+      mlflow server 
+        --host 0.0.0.0 
+        --port 5001 
+        --backend-store-uri postgresql://airflow:airflow@postgres:5432/airflow
+        --default-artifact-root /mlflow_data/artifacts
+        --serve-artifacts
+      "
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - app_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: sentiment_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - app_network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: sentiment_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./infrastructure/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - grafana_data:/var/lib/grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s:%(http_port)s/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+    networks:
+      - app_network
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
+  mlflow_data:
+  airflow_data:
+
+networks:
+  app_network:
+    driver: bridge

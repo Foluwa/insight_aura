@@ -1,23 +1,17 @@
-# File: backend/airflow/dags/monitoring_dashboard_dag.py
-
-"""
-Monitoring and metrics DAG for Insigt Aura.
-This DAG generates reports, cleans up old data, and provides health checks.
-"""
-
 import sys
 import os
+sys.path.insert(0, '/opt/airflow')
+sys.path.insert(0, '/opt/airflow/backend')
 import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.operators.dummy import DummyOperator
-from airflow.utils.dates import days_ago
+from airflow.operators.empty import EmptyOperator
 from airflow.models import Variable
 
 from backend.services.app_management_service import AppManagementService
@@ -287,14 +281,14 @@ with DAG(
     dag_id='monitoring_dashboard',
     default_args=default_args,
     description='Monitoring and metrics dashboard for enterprise scraping',
-    schedule_interval='0 1 * * *',  # Daily at 1 AM
-    start_date=days_ago(1),
+    schedule='0 1 * * *',  # Daily at 1 AM
+    start_date=datetime(2025, 5, 1),
     catchup=False,
     tags=['monitoring', 'metrics', 'dashboard', 'maintenance'],
     doc_md="""
     ## Monitoring Dashboard DAG
     
-    This DAG provides comprehensive monitoring and maintenance for the Insigt Aura.
+    This DAG provides comprehensive monitoring and maintenance for the Insight Aura.
     
     **Features:**
     - Daily performance reports
@@ -307,7 +301,7 @@ with DAG(
     """
 ) as monitoring_dag:
 
-    start_monitoring = DummyOperator(
+    start_monitoring = EmptyOperator(
         task_id='start_monitoring',
         doc_md="Initialize monitoring and maintenance tasks"
     )
@@ -388,7 +382,7 @@ with DAG(
         doc_md="Send comprehensive monitoring report via notifications"
     )
 
-    end_monitoring = DummyOperator(
+    end_monitoring = EmptyOperator(
         task_id='end_monitoring',
         doc_md="Complete monitoring and maintenance pipeline"
     )
