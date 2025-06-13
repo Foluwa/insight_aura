@@ -7,24 +7,21 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
       args:
-        - NEXT_PUBLIC_API_URL=http://localhost/api
+        - NEXT_PUBLIC_API_URL=/api
         - NEXT_PUBLIC_APP_ENV=production
     container_name: insightaura_frontend_prod
     restart: unless-stopped
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_URL=http://localhost/api
       - NEXT_PUBLIC_APP_ENV=production
-      - NEXT_PUBLIC_AIRFLOW_URL=http://localhost/airflow
-      - NEXT_PUBLIC_GRAFANA_URL=http://localhost/grafana
-      - NEXT_PUBLIC_MLFLOW_URL=http://localhost/mlflow
-    # No volume mounts in production - using built image
+      - NEXT_PUBLIC_API_URL=/api
+      - NEXT_PUBLIC_AIRFLOW_URL=/airflow
+      - NEXT_PUBLIC_GRAFANA_URL=/grafana
+      - NEXT_PUBLIC_MLFLOW_URL=/mlflow
     networks:
       - insightaura_network
-    command: node server.js  # Production server
     expose: ["3000"]
 
-  # Caddy for production reverse proxy
   caddy:
     image: caddy:2-alpine
     container_name: insightaura_caddy_prod
