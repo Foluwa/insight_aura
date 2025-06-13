@@ -116,7 +116,7 @@
     @apply !fill-dark dark:!fill-white;
 }
 
-.flatpickr-wrapper {
+/* .flatpickr-wrapper {
     @apply w-full;
 }
 
@@ -218,7 +218,7 @@ span.flatpickr-weekday,
 .flatpickr-day.startRange.startRange + .endRange:not(:nth-child(7n + 1)),
 .flatpickr-day.endRange.startRange + .endRange:not(:nth-child(7n + 1)) {
     box-shadow: -10px 0 0 #3c50e0;
-}
+} */
 
 .map-btn .jvm-zoom-btn {
     @apply flex h-7.5 w-7.5 items-center justify-center rounded border border-stroke bg-white px-0 pb-0.5 pt-0 text-2xl leading-none text-dark-5 hover:border-primary hover:bg-primary hover:text-white dark:border-dark-3 dark:bg-dark-2 dark:text-dark-6 dark:hover:border-primary dark:hover:bg-primary dark:hover:text-white;
