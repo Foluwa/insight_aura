@@ -35,7 +35,7 @@ insightaura.duckdns.org {
         reverse_proxy airflow_standalone:8080
     }
 
-    # Grafana  (Grafana listens on 3000 inside its container)
+    # Grafana  (Grafana listens on 3001 inside its container)
     handle_path /grafana/* {
         reverse_proxy grafana:3001
     }
