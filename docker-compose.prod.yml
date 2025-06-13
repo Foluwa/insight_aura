@@ -22,6 +22,7 @@ services:
     networks:
       - insightaura_network
     command: node server.js  # Production server
+    expose: ["3000"]
 
   # Caddy for production reverse proxy
   caddy:
@@ -33,7 +34,7 @@ services:
       - "443:443"
       - "443:443/udp"  # For HTTP/3
     volumes:
-      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - insightaura_caddy_data:/data
       - insightaura_caddy_config:/config
       - insightaura_caddy_logs:/var/log/caddy
@@ -139,6 +140,7 @@ services:
     networks:
       - insightaura_network
     restart: unless-stopped
+    expose: ["8080"]
 
   mlflow:
     image: python:3.9-slim
@@ -163,6 +165,7 @@ services:
     networks:
       - insightaura_network
     restart: unless-stopped
+    expose: ["5001"]
 
   grafana:
     image: grafana/grafana:latest
@@ -183,6 +186,7 @@ services:
     networks:
       - insightaura_network
     restart: unless-stopped
+    expose: ["3001"]
 
   prometheus:
     image: prom/prometheus:latest
