@@ -1,61 +1,35 @@
-# caddy/Caddyfile  ← the only Caddyfile you mount
-
-# --- your public domain (automatic HTTPS) ----------------
 insightaura.duckdns.org {
+  # ...logs, headers, compression...
 
-    ## Logging
-    log {
-        output file /var/log/caddy/access.log
-        format json
-    }
+  respond /health "healthy" 200
 
-    ## Minimal security headers
-    header {
-        X-Frame-Options "SAMEORIGIN"
-        X-Content-Type-Options "nosniff"
-        Referrer-Policy "no-referrer-when-downgrade"
-        -Server
-    }
+  handle_path /api/* {
+    reverse_proxy backend:8000
+  }
 
-    ## Compression
-    encode gzip zstd
+  handle_path /airflow/* {
+    reverse_proxy airflow_standalone:8080
+  }
 
-    ## Health check (caddy responds directly)
-    respond /health "healthy" 200
+  handle_path /grafana/* {
+    reverse_proxy grafana:3001
+  }
 
-    # ---------- ROUTING -----------------------------------
+  handle_path /mlflow/* {
+    # Option A: rewrite to strip prefix
+    rewrite * {path}
+    reverse_proxy mlflow:5001
+  }
 
-    # API → FastAPI
-    handle_path /api/* {
-        reverse_proxy backend:8000
-    }
+  @static {
+    path *.js *.css *.png *.svg *.woff2 *.woff *.ttf *.eot
+  }
+  handle @static {
+    header Cache-Control "public, max-age=31536000, immutable"
+    reverse_proxy frontend:3000
+  }
 
-    # Airflow UI
-    handle_path /airflow/* {
-        reverse_proxy airflow_standalone:8080
-    }
-
-    # Grafana  (Grafana listens on 3001 inside its container)
-    handle_path /grafana/* {
-        reverse_proxy grafana:3001
-    }
-
-    # MLflow tracking server
-    handle_path /mlflow/* {
-        reverse_proxy mlflow:5001
-    }
-
-    # Static assets from the Next.js build
-    @static {
-        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
-    }
-    handle @static {
-        header Cache-Control "public, max-age=31536000, immutable"
-        reverse_proxy frontend:3000
-    }
-
-    # Everything else → Next.js SSR
-    handle {
-        reverse_proxy frontend:3000
-    }
+  handle {
+    reverse_proxy frontend:3000
+  }
 }
