@@ -27,7 +27,7 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-          
+
   caddy:
     build:
       context: .
@@ -149,6 +149,31 @@ services:
           cpus: '0.75'
           memory: 768M
 
+  mlflow:
+    image: python:3.9-slim
+    container_name: insightaura_mlflow_prod
+    volumes:
+      - ./mlflow_data:/mlflow_data
+      - ./data/mlflow:/data/mlflow
+    working_dir: /mlflow_data
+    command: sh -c "
+      mkdir -p /data/mlflow &&
+      mkdir -p /mlflow_data/artifacts &&
+      mkdir -p /mlflow_data/models &&
+      pip install --no-cache-dir mlflow &&
+      mlflow server 
+        --host 0.0.0.0 
+        --port 5001 
+        --backend-store-uri sqlite:////data/mlflow/mlflow.db
+        --default-artifact-root /mlflow_data/artifacts
+        --serve-artifacts
+      "
+    # No exposed ports in production - internal access only
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+    expose: ["5001"]
+
   grafana:
     image: grafana/grafana:latest
     container_name: insightaura_grafana_prod
@@ -202,6 +227,7 @@ volumes:
   insightaura_caddy_data:
   insightaura_caddy_config:
   insightaura_caddy_logs:
+  insightaura_mlflow_data_prod:
 
 networks:
   insightaura_network:
