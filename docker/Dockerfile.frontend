@@ -1,14 +1,18 @@
 FROM node:18-alpine AS builder
 
 WORKDIR /app
-
 COPY frontend/package*.json ./
 RUN npm ci --omit=dev
 
-COPY frontend/ .
-RUN npm run build          
+COPY frontend/tsconfig.json ./
+COPY frontend/public ./public
+COPY frontend/styles ./styles
+COPY frontend/src ./src
+COPY frontend/next.config.js* ./  
 
-FROM node:18-alpine
+RUN npm run build
+
+FROM node:18-alpine AS runner
 
 ENV NODE_ENV=production
 WORKDIR /app
@@ -17,14 +21,12 @@ COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules  ./node_modules
 COPY --from=builder /app/.next         ./.next
 COPY --from=builder /app/public        ./public
-COPY --from=builder /app/next.config.js* ./      
+COPY --from=builder /app/next.config.js* ./
 
-
-# Port where the app listens INSIDE the container
 EXPOSE 3000
 
-# Health-check endpoint (served by Next.js itself)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD curl -f http://localhost:3000/health || exit 1
 
-CMD ["npx", "next", "start", "-H", "0.0.0.0", "-p", "3000"]
+# CMD using built binary
+CMD ["./node_modules/.bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]
