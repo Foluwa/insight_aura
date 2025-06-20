@@ -1,9 +1,10 @@
-insightaura.duckdns.org, *.insightaura.duckdns.org {
+{
+    email {env.EMAIL}
+}
+
+insightaura.duckdns.org {
     tls {
-        dns duckdns {
-            token {env.DUCKDNS_TOKEN}
-        }
-        email {env.EMAIL}
+        dns duckdns {env.DUCKDNS_TOKEN}
     }
 
     encode gzip zstd
