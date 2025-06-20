@@ -2,6 +2,7 @@
     email {env.EMAIL}
 }
 
+# Main domain - Frontend
 insightaura.duckdns.org {
     tls {
         dns duckdns {env.DUCKDNS_TOKEN}
@@ -10,26 +11,16 @@ insightaura.duckdns.org {
     encode gzip zstd
 
     log {
-        output file /var/log/caddy/access.log
+        output file /var/log/caddy/main.log
         format json
     }
 
+    # Keep API on main domain for frontend
     handle_path /api/* {
         reverse_proxy backend:8000
     }
 
-    handle_path /airflow/* {
-        reverse_proxy airflow_standalone:8080
-    }
-
-    handle_path /grafana/* {
-        reverse_proxy grafana:3001
-    }
-
-    handle_path /mlflow/* {
-        reverse_proxy mlflow:5001
-    }
-
+    # Static files with caching
     @static {
         path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
     }
@@ -38,7 +29,72 @@ insightaura.duckdns.org {
         reverse_proxy frontend:3000
     }
 
+    # Default to frontend
     handle {
         reverse_proxy frontend:3000
     }
+}
+
+# MLflow subdomain
+mlflow.insightaura.duckdns.org {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+
+    encode gzip zstd
+
+    log {
+        output file /var/log/caddy/mlflow.log
+        format json
+    }
+
+    reverse_proxy mlflow:5001
+}
+
+# Airflow subdomain
+airflow.insightaura.duckdns.org {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+
+    encode gzip zstd
+
+    log {
+        output file /var/log/caddy/airflow.log
+        format json
+    }
+
+    reverse_proxy airflow_standalone:8080
+}
+
+# Grafana subdomain
+grafana.insightaura.duckdns.org {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+
+    encode gzip zstd
+
+    log {
+        output file /var/log/caddy/grafana.log
+        format json
+    }
+
+    reverse_proxy grafana:3001
+}
+
+# Optional: API subdomain (if you want to separate API from main domain)
+api.insightaura.duckdns.org {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+
+    encode gzip zstd
+
+    log {
+        output file /var/log/caddy/api.log
+        format json
+    }
+
+    reverse_proxy backend:8000
 }
