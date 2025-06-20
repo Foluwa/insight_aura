@@ -1,14 +1,9 @@
-{
-  # Global options
-  email {env.EMAIL}
-}
-
 *.insightaura.duckdns.org {
   tls {
     dns duckdns {env.DUCKDNS_TOKEN}
   }
 
-  # Service mapping rules
+  # Reverse proxies
   handle_path /api/* {
     reverse_proxy backend:8000
   }
@@ -33,6 +28,7 @@
     reverse_proxy frontend:3000
   }
 
-  # All other requests to Next.js
-  reverse_proxy frontend:3000
+  handle {
+    reverse_proxy frontend:3000
+  }
 }
