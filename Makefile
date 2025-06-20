@@ -127,6 +127,7 @@ up-prod: ## 🏭 Start production environment
 	@echo "🧪 Initializing Airflow..."
 	@$(MAKE) --no-print-directory _init-airflow-prod
 	@echo "🚀 Starting production services with Caddy reverse proxy..."
+	@docker-compose -f docker-compose.prod.yml build --no-cache
 	@docker-compose -f docker-compose.prod.yml up -d
 	@sleep 30
 	@$(MAKE) --no-print-directory status-prod
