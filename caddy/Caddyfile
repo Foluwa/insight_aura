@@ -1,34 +1,60 @@
-insightaura.duckdns.org {
-  # ...logs, headers, compression...
+{
+  # TLS/mail configuration
+  email moronfoluwaakintola@gmail.com
+  # Optional: Uncomment to see detailed logs
+  # debug
+}
 
-  respond /health "healthy" 200
+# Root + wildcard domain block
+*.insightaura.duckdns.org, insightaura.duckdns.org {
+  # Automatically request wildcard certificate via DNS-01
+  tls {
+    # DuckDNS support via built-in Caddy DNS module
+    dns duckdns {env.DUCKDNS_TOKEN}
+  }
 
-  handle_path /api/* {
+  encode gzip zstd
+
+  # Frontend (Next.js SSR/static)
+  @frontend host insightaura.duckdns.org
+  handle @frontend {
+    reverse_proxy frontend:3000
+  }
+
+  # API
+  @api host api.insightaura.duckdns.org
+  handle @api {
     reverse_proxy backend:8000
   }
 
-  handle_path /airflow/* {
+  # Airflow UI
+  @airflow host airflow.insightaura.duckdns.org
+  handle @airflow {
     reverse_proxy airflow_standalone:8080
   }
 
-  handle_path /grafana/* {
+  # Grafana UI
+  @grafana host grafana.insightaura.duckdns.org
+  handle @grafana {
     reverse_proxy grafana:3001
   }
 
-  handle_path /mlflow/* {
-    # Option A: rewrite to strip prefix
-    rewrite * {path}
+  # MLflow UI
+  @mlflow host mlflow.insightaura.duckdns.org
+  handle @mlflow {
     reverse_proxy mlflow:5001
   }
 
+  # Catch‑all for asset routing (fonts, CSS, JS via frontend)
   @static {
-    path *.js *.css *.png *.svg *.woff2 *.woff *.ttf *.eot
+    path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
   }
   handle @static {
     header Cache-Control "public, max-age=31536000, immutable"
     reverse_proxy frontend:3000
   }
 
+  # Fallback: direct all other traffic to frontend
   handle {
     reverse_proxy frontend:3000
   }
