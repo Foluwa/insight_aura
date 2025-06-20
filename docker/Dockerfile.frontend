@@ -6,9 +6,8 @@ RUN npm ci --omit=dev
 
 COPY frontend/tsconfig.json ./
 COPY frontend/public ./public
-COPY frontend/styles ./styles
 COPY frontend/src ./src
-COPY frontend/next.config.js* ./  
+COPY frontend/next.config.mjs* ./  
 
 RUN npm run build
 
