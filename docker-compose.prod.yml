@@ -120,14 +120,18 @@ services:
     container_name: insightaura_airflow_prod
     command: >
       bash -c "
-        airflow db upgrade &&
-        airflow users create --username admin --firstname admin --lastname admin \
-          --role Admin --email admin@example.com --password admin && 
-        exec gunicorn \
+        airflow db migrate && 
+        airflow users create \
+          --username admin \
+          --firstname admin \
+          --lastname admin \
+          --role Admin \
+          --email admin@example.com \
+          --password admin && 
+        exec gunicorn 'airflow.www.app:create_app()' \
           --bind 0.0.0.0:8080 \
           --workers 2 \
-          --worker-class uvicorn.workers.UvicornWorker \
-          airflow.api.auth.backend.deny_all"
+          --worker-class sync"
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
@@ -140,11 +144,9 @@ services:
       - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
       - AIRFLOW__CORE__LOAD_EXAMPLES=false
       - AIRFLOW__API__EXPOSE_CONFIG=true
-      - AIRFLOW__LOGGING__LOGGING_LEVEL=INFO
       - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
       - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY:-changeme}
       - AIRFLOW__WEBSERVER__BASE_URL=https://airflow.insightaura.duckdns.org
-      - AIRFLOW__WEBSERVER__WORKERS=2
       - PYTHONPATH=/opt/airflow:/opt/airflow/backend
       - DATABASE_URL=${DATABASE_URL}
       - SENTRY_DSN=${SENTRY_DSN}
@@ -159,6 +161,7 @@ services:
         limits:
           cpus: '1.0'
           memory: 1500M
+
 
 
   mlflow:
