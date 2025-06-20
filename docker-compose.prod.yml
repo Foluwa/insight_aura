@@ -27,33 +27,6 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
-
-  # caddy:
-  #   image: caddy:2-alpine
-  #   container_name: insightaura_caddy_prod
-  #   restart: unless-stopped
-  #   ports:
-  #     - "80:80"
-  #     - "443:443"
-  #     - "443:443/udp"
-  #   volumes:
-  #     - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - insightaura_caddy_data:/data
-  #     - insightaura_caddy_config:/config
-  #     - insightaura_caddy_logs:/var/log/caddy
-  #   depends_on:
-  #     - frontend
-  #     - backend
-  #     - airflow_standalone
-  #   networks:
-  #     - insightaura_network
-  #   environment:
-  #     - CADDY_INGRESS_NETWORKS=insightaura_network
-  #   healthcheck:
-  #     test: ["CMD", "curl", "-f", "http://localhost"]
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
   caddy:
     build:
       context: .
@@ -64,19 +37,20 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
-    env_file:
-      - .env
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - insightaura_caddy_data:/data
       - insightaura_caddy_config:/config
       - insightaura_caddy_logs:/var/log/caddy
+    environment:
+      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+      - EMAIL=folu@gmail.com
+    networks:
+      - insightaura_network
     depends_on:
       - frontend
       - backend
       - airflow_standalone
-    networks:
-      - insightaura_network
 
   backend:
     image: python:3.9-slim

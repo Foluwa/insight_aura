@@ -1,8 +1,10 @@
-FROM caddy:2-alpine-builder AS builder
+ARG CADDY_VERSION=2.9.2
+FROM caddy:${CADDY_VERSION}-builder-alpine AS builder
 
 RUN xcaddy build \
   --with github.com/caddy-dns/duckdns
 
-FROM caddy:2-alpine
-
+FROM caddy:${CADDY_VERSION}-alpine
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+
+ENTRYPOINT ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
