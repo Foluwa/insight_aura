@@ -14,10 +14,10 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_APP_ENV=production
-      - NEXT_PUBLIC_API_URL=/api
-      - NEXT_PUBLIC_AIRFLOW_URL=/airflow
-      - NEXT_PUBLIC_GRAFANA_URL=/grafana
-      - NEXT_PUBLIC_MLFLOW_URL=/mlflow
+      - NEXT_PUBLIC_API_URL=https://api.insightaura.duckdns.org
+      - NEXT_PUBLIC_AIRFLOW_URL=https://airflow.insightaura.duckdns.org
+      - NEXT_PUBLIC_GRAFANA_URL=https://grafana.insightaura.duckdns.org
+      - NEXT_PUBLIC_MLFLOW_URL=https://mlflow.insightaura.duckdns.org
     networks:
       - insightaura_network
     expose:
