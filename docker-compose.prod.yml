@@ -7,6 +7,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
       args:
+        - BUILD_ID=${BUILD_ID:-0}
         - NEXT_PUBLIC_API_URL=/api
         - NEXT_PUBLIC_APP_ENV=production
     container_name: insightaura_frontend_prod
@@ -20,6 +21,10 @@ services:
       - NEXT_PUBLIC_MLFLOW_URL=https://mlflow.insightaura.duckdns.org
     networks:
       - insightaura_network
+    volumes:
+      - ./frontend/public/images:/app/public/images:ro
+      - ./frontend/.next/static:/app/.next/static
+      - ./frontend/public:/app/public
     expose:
       - "3000"
     deploy:
@@ -119,20 +124,28 @@ services:
       context: .
       dockerfile: docker/Dockerfile.airflow
     container_name: insightaura_airflow_prod
+    env_file:
+      - .env 
     command: >
       bash -c "
-        airflow db migrate && 
-        airflow users create \
-          --username admin \
-          --firstname admin \
-          --lastname admin \
-          --role Admin \
-          --email admin@example.com \
-          --password admin && 
-        exec gunicorn 'airflow.www.app:create_app()' \
-          --bind 0.0.0.0:8080 \
-          --workers 2 \
-          --worker-class sync"
+      until airflow db check; do sleep 5; done &&
+      airflow db migrate &&
+      (airflow users create \
+        --username $${AIRFLOW_ADMIN_USERNAME} \
+        --firstname $${AIRFLOW_ADMIN_FIRSTNAME} \
+        --lastname $${AIRFLOW_ADMIN_LASTNAME} \
+        --role $${AIRFLOW_ADMIN_ROLE} \
+        --email $${AIRFLOW_ADMIN_EMAIL} \
+        --password $${AIRFLOW_ADMIN_PASSWORD} || true) &&
+      ([ -n \"$${AIRFLOW_USER_USERNAME}\" ] && airflow users create \
+        --username $${AIRFLOW_USER_USERNAME} \
+        --firstname $${AIRFLOW_USER_FIRSTNAME} \
+        --lastname $${AIRFLOW_USER_LASTNAME} \
+        --role $${AIRFLOW_USER_ROLE} \
+        --email $${AIRFLOW_USER_EMAIL} \
+        --password $${AIRFLOW_USER_PASSWORD} || true) &&
+      exec airflow standalone
+      "
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
@@ -148,6 +161,7 @@ services:
       - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
       - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY:-changeme}
       - AIRFLOW__WEBSERVER__BASE_URL=https://airflow.insightaura.duckdns.org
+      - AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX=True
       - PYTHONPATH=/opt/airflow:/opt/airflow/backend
       - DATABASE_URL=${DATABASE_URL}
       - SENTRY_DSN=${SENTRY_DSN}
@@ -200,12 +214,13 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
       - insightaura_grafana_data_prod:/var/lib/grafana
     environment:
+      - GF_SERVER_DOMAIN=grafana.insightaura.duckdns.org
+      - GF_SERVER_ROOT_URL=https://grafana.insightaura.duckdns.org/
       - GF_SERVER_HTTP_PORT=3001
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=%(protocol)s://%(domain)s/grafana/
-      - GF_SERVER_SERVE_FROM_SUB_PATH=true
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
       - GF_METRICS_ENABLED=false
       - GF_ANALYTICS_REPORTING_ENABLED=false
