@@ -216,7 +216,6 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
       - insightaura_grafana_data_prod:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - grafana-storage:/var/lib/grafana
     environment:
       - GF_SERVER_DOMAIN=grafana.insightaura.duckdns.org
       - GF_SERVER_ROOT_URL=https://grafana.insightaura.duckdns.org/
