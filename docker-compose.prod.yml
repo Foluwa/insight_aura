@@ -27,6 +27,8 @@ services:
       - ./frontend/public:/app/public
     expose:
       - "3000"
+    ports:
+      - "3000:3000"  # Add this if missing
     deploy:
       resources:
         limits:
@@ -213,6 +215,8 @@ services:
       - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
       - insightaura_grafana_data_prod:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-storage:/var/lib/grafana
     environment:
       - GF_SERVER_DOMAIN=grafana.insightaura.duckdns.org
       - GF_SERVER_ROOT_URL=https://grafana.insightaura.duckdns.org/

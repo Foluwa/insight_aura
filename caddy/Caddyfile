@@ -10,7 +10,7 @@
     }
     encode gzip zstd
     log {
-        output file /var/log/caddy/{args.0}.log
+        output file /var/log/caddy/{args[0]}.log
         format json
     }
 }
@@ -19,12 +19,13 @@
 insightaura.duckdns.org {
     import common_config "main"
 
-    # Critical headers for all responses
+    # Security headers for all responses
     header {
         # Security headers
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "strict-origin-when-cross-origin"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
         
         # Cache control for static assets
         Cache-Control "public, max-age=31536000, immutable" {
@@ -33,54 +34,18 @@ insightaura.duckdns.org {
             /fonts/*
             /images/*
         }
-        
-        # CORS for fonts and assets
-        Access-Control-Allow-Origin "*" {
-            /_next/static/media/*
-            /fonts/*
-        }
     }
 
-    # Next.js static assets - priority route
+    # Next.js static assets
     handle /_next/* {
-        # Explicit MIME type overrides
-        @css path *.css
-        @js path *.js
-        @fonts path *.woff2
-        @images path *.svg *.png *.jpg *.webp
-        
-        handle @css {
-            header Content-Type text/css
-            reverse_proxy frontend:3000
-        }
-        
-        handle @fonts {
-            header Content-Type font/woff2
-            reverse_proxy frontend:3000
-        }
-        
-        handle @images {
-            header Content-Type image/{path.extension}
-            reverse_proxy frontend:3000
-        }
-        
-        handle @js {
-            header Content-Type application/javascript
-            reverse_proxy frontend:3000
-        }
-        
-        # Fallback for other _next files
-        handle {
-            reverse_proxy frontend:3000 {
-                header_up Host {host}
-                header_up X-Forwarded-Proto https
-            }
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
         }
     }
 
-    # Static files from public folder
+    # Static files
     handle /static/* {
-        header Content-Type {http.reverse_proxy.header.Content-Type}
         reverse_proxy frontend:3000 {
             header_up Host {host}
             header_up X-Forwarded-Proto https
@@ -97,62 +62,37 @@ insightaura.duckdns.org {
 
     # Health checks
     handle /health {
-        reverse_proxy frontend:3000 {
-            header_up Host {host}
-            header_up X-Forwarded-Proto https
-        }
+        reverse_proxy frontend:3000
     }
 
-    # All other requests
+    # Primary route - all other requests
     handle {
         reverse_proxy frontend:3000 {
             header_up Host {host}
             header_up X-Forwarded-Proto https
-            
-            # Required for Next.js HMR in development
-            header_up Connection "upgrade"
-            header_up Upgrade $http_upgrade
+            header_up Connection {http.request.header.Connection}
+            header_up Upgrade {http.request.header.Upgrade}
         }
     }
 }
 
-# API 
+# API subdomain
 api.insightaura.duckdns.org {
     import common_config "api"
-    
-    # Reverse proxy to backend
     reverse_proxy backend:8000 {
         header_up Host {host}
         header_up X-Forwarded-Proto https
     }
 }
 
-# Airflow 
+# Airflow subdomain
 airflow.insightaura.duckdns.org {
     import common_config "airflow"
 
-    # Reverse proxy with startup tolerance and security headers
-    reverse_proxy {
-        to airflow_standalone:8080
-        transport http {
-            tls_insecure_skip_verify  
-        }
-        
-        # Headers for proper URL generation
-        header_up Host {host}
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-Host {host}
-        header_up X-Real-IP {remote}
-        
-        # Extended timeout for initial Airflow startup
-        try_duration 120s
-        flush_interval -1
-    }
-
-    # Handle websocket connections
+    # Handle websockets first
     @websockets {
         header Connection *Upgrade*
-        header Upgrade    websocket
+        header Upgrade websocket
     }
     handle @websockets {
         reverse_proxy airflow_standalone:8080 {
@@ -161,23 +101,32 @@ airflow.insightaura.duckdns.org {
             }
         }
     }
+
+    # Regular requests
+    handle {
+        reverse_proxy airflow_standalone:8080 {
+            transport http {
+                tls_insecure_skip_verify
+            }
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+            header_up X-Forwarded-Host {host}
+            header_up X-Real-IP {remote}
+        }
+    }
 }
 
-# Grafana 
+# Grafana subdomain
 grafana.insightaura.duckdns.org {
     import common_config "grafana"
-    
-    # Add these headers specifically for Grafana
     reverse_proxy grafana:3001 {
         header_up Host {host}
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host {host}
-        header_up X-Forwarded-For {remote}
-        header_up X-Real-IP {remote}
     }
 }
 
-# MLflow 
+# MLflow subdomain
 mlflow.insightaura.duckdns.org {
     import common_config "mlflow"
     reverse_proxy mlflow:5001 {
@@ -186,11 +135,9 @@ mlflow.insightaura.duckdns.org {
     }
 }
 
-# Prometheus 
+# Prometheus subdomain
 prometheus.insightaura.duckdns.org {
     import common_config "prometheus"
-    
-    # Reverse proxy to Prometheus
     reverse_proxy prometheus:9090 {
         header_up Host {host}
         header_up X-Forwarded-Proto https
