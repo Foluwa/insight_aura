@@ -1,106 +1,118 @@
 {
     email {env.EMAIL}
+    auto_https disable_redirects
 }
 
-# Main domain - Frontend
+# Shared configuration for all domains
+(common_config) {
+    tls {
+        dns duckdns {env.DUCKDNS_TOKEN}
+    }
+    encode gzip zstd
+    log {
+        output file /var/log/caddy/{args.0}.log
+        format json
+    }
+}
+
+# Main domain - Frontend 
 insightaura.duckdns.org {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
+    import common_config "main"
+    
+    # Next.js specific routes
+    handle /_next/* {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+        }
     }
-
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/main.log
-        format json
+    
+    handle /static/* {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+        }
     }
-
-    # Serve Next.js assets
-    handle_path /_next/* {
-        reverse_proxy frontend:3000
-    }
-
-    # Static assets
-    @static {
-        path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
-    }
-    handle @static {
-        header Cache-Control "public, max-age=31536000, immutable"
-        reverse_proxy frontend:3000
-    }
-
+    
     # API proxy
-    handle_path /api/* {
-        reverse_proxy backend:8000
+    handle /api/* {
+        reverse_proxy backend:8000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+        }
     }
-
-    # Fallback to frontend
+    
+    # Health checks
+    handle /health {
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+        }
+    }
+    
+    # All other requests go to Next.js
     handle {
-        reverse_proxy frontend:3000
+        reverse_proxy frontend:3000 {
+            header_up Host {host}
+            header_up X-Forwarded-Proto https
+        }
     }
 }
 
-
-# MLflow subdomain
-mlflow.insightaura.duckdns.org {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
-    }
-
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/mlflow.log
-        format json
-    }
-
-    reverse_proxy mlflow:5001
-}
-
-# Airflow subdomain
-airflow.insightaura.duckdns.org {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
-    }
-
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/airflow.log
-        format json
-    }
-
-    reverse_proxy airflow_standalone:8080
-}
-
-# Grafana subdomain
-grafana.insightaura.duckdns.org {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
-    }
-
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/grafana.log
-        format json
-    }
-
-    reverse_proxy grafana:3001
-}
-
-# Optional: API subdomain (if you want to separate API from main domain)
+# API 
 api.insightaura.duckdns.org {
-    tls {
-        dns duckdns {env.DUCKDNS_TOKEN}
+    import common_config "api"
+    
+    # Reverse proxy to backend
+    reverse_proxy backend:8000 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
     }
+}
 
-    encode gzip zstd
-
-    log {
-        output file /var/log/caddy/api.log
-        format json
+# Airflow 
+airflow.insightaura.duckdns.org {
+    import common_config "airflow"
+    
+    # Reverse proxy to Airflow
+    reverse_proxy airflow_standalone:8080 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+        
+        # Needed for Airflow webserver
+        transport http {
+            tls_insecure_skip_verify
+        }
     }
+}
 
-    reverse_proxy backend:8000
+# Grafana 
+grafana.insightaura.duckdns.org {
+    import common_config "grafana"
+    
+    # Reverse proxy to Grafana
+    reverse_proxy grafana:3001 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
+}
+
+# MLflow 
+mlflow.insightaura.duckdns.org {
+    import common_config "mlflow"
+    reverse_proxy mlflow:5001 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
+}
+
+# Prometheus 
+prometheus.insightaura.duckdns.org {
+    import common_config "prometheus"
+    
+    # Reverse proxy to Prometheus
+    reverse_proxy prometheus:9090 {
+        header_up Host {host}
+        header_up X-Forwarded-Proto https
+    }
 }

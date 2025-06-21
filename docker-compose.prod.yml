@@ -58,7 +58,6 @@ services:
       - grafana
       - mlflow
 
-
   backend:
     image: python:3.9-slim
     container_name: insightaura_backend_prod
@@ -83,6 +82,8 @@ services:
         condition: service_healthy
     networks:
       - insightaura_network
+    expose:
+      - "8000"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
@@ -162,32 +163,33 @@ services:
           cpus: '1.0'
           memory: 1500M
 
-
-
   mlflow:
     image: python:3.9-slim
     container_name: insightaura_mlflow_prod
     volumes:
-      - ./mlflow_data:/mlflow_data
-      - ./data/mlflow:/data/mlflow
-    working_dir: /mlflow_data
-    command: sh -c "
+      - mlflow_data:/mlflow_data
+      - mlflow_db:/data/mlflow
+    environment:
+      - MLFLOW_TRACKING_URI=http://localhost:5001
+      - MLFLOW_SERVE_ARTIFACTS=1
+      - MLFLOW_ARTIFACTS_DESTINATION=/mlflow_data/artifacts
+    command: >-
+      sh -c "
       mkdir -p /data/mlflow &&
       mkdir -p /mlflow_data/artifacts &&
-      mkdir -p /mlflow_data/models &&
       pip install --no-cache-dir mlflow &&
-      mlflow server 
-        --host 0.0.0.0 
-        --port 5001 
+      mlflow server
+        --host 0.0.0.0
+        --port 5001
         --backend-store-uri sqlite:////data/mlflow/mlflow.db
-        --default-artifact-root /mlflow_data/artifacts
+        --default-artifact-root file:///mlflow_data/artifacts
         --serve-artifacts
       "
-    # No exposed ports in production - internal access only
     networks:
       - insightaura_network
     restart: unless-stopped
-    expose: ["5001"]
+    expose: 
+      - "5001"
 
   grafana:
     image: grafana/grafana:latest
@@ -198,6 +200,7 @@ services:
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
       - insightaura_grafana_data_prod:/var/lib/grafana
     environment:
+      - GF_SERVER_HTTP_PORT=3001
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
@@ -206,11 +209,12 @@ services:
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
       - GF_METRICS_ENABLED=false
       - GF_ANALYTICS_REPORTING_ENABLED=false
+    ports:
+      - "3001:3001"
     networks:
       - insightaura_network
     restart: unless-stopped
     expose:
-      - "3000"
       - "3001"
     deploy:
       resources:
@@ -233,6 +237,8 @@ services:
       - '--web.enable-lifecycle'
     networks:
       - insightaura_network
+    expose:
+      - "9090"
     restart: unless-stopped
     deploy:
       resources:
@@ -249,6 +255,8 @@ volumes:
   insightaura_caddy_config:
   insightaura_caddy_logs:
   insightaura_mlflow_data_prod:
+  mlflow_data:
+  mlflow_db:
 
 networks:
   insightaura_network:
