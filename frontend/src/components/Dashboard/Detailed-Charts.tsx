@@ -3,7 +3,7 @@ import React from "react";
 import ChartFive from "../Charts/ChartFive";
 import ChartThree from "../Charts/ChartThree";
 import ChartTwo from "../Charts/ChartTwo";
-import ChatCard from "../Chat/ChatCard";
+// import ChatCard from "../Chat/ChatCard";
 import MapOne from "../Maps/MapOne";
 import DataStatsOne from "@/components/DataStats/DataStatsOne";
 import ChartOne from "@/components/Charts/ChartOne";
@@ -20,7 +20,7 @@ const DetailedCharts: React.FC = () => {
         <MapOne />
         <div className="col-span-12 xl:col-span-8">
         </div>
-        <ChatCard />
+        {/* <ChatCard /> */}
       </div>
       <div className="grid grid-cols-12 gap-4 md:gap-6 2xl:gap-7.5 mt-4">
         <ChartThree />
