@@ -15,12 +15,12 @@ insightaura.duckdns.org {
         format json
     }
 
-    # Keep API on main domain for frontend
-    handle_path /api/* {
-        reverse_proxy backend:8000
+    # Serve Next.js assets
+    handle_path /_next/* {
+        reverse_proxy frontend:3000
     }
 
-    # Static files with caching
+    # Static assets
     @static {
         path *.js *.css *.png *.jpg *.jpeg *.gif *.ico *.svg *.woff *.woff2 *.ttf *.eot
     }
@@ -29,11 +29,17 @@ insightaura.duckdns.org {
         reverse_proxy frontend:3000
     }
 
-    # Default to frontend
+    # API proxy
+    handle_path /api/* {
+        reverse_proxy backend:8000
+    }
+
+    # Fallback to frontend
     handle {
         reverse_proxy frontend:3000
     }
 }
+
 
 # MLflow subdomain
 mlflow.insightaura.duckdns.org {
