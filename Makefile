@@ -112,24 +112,48 @@ up-dev: ## 🛠️ Start development environment with all services
 	@echo "   📊 Grafana:       http://localhost:3001"
 	@echo "   🧪 MLflow:        http://localhost:5001"
 
-up-prod: ## 🏭 Start production environment
+# up-prod: ## 🏭 Start production environment
+# 	@echo "🏭 Starting Insight Aura (Production)"
+# 	@echo "====================================="
+# 	@export ENVIRONMENT=production
+# 	@$(MAKE) --no-print-directory _setup-dirs
+# 	@$(MAKE) --no-print-directory _setup-configs
+# 	@$(MAKE) --no-print-directory _backup-before-start
+# 	@echo "🔌 Starting PostgreSQL..."
+# 	@docker-compose -f docker-compose.prod.yml up -d postgres
+# 	@$(MAKE) --no-print-directory _wait-postgres-prod
+# 	@echo "📦 Installing dependencies..."
+# 	@$(MAKE) --no-print-directory _install-deps-quiet-prod
+# 	@echo "🧪 Initializing Airflow..."
+# 	@$(MAKE) --no-print-directory _init-airflow-prod
+# 	@echo "🚀 Starting production services with Caddy reverse proxy..."
+# 	@docker-compose -f docker-compose.prod.yml build --no-cache
+# 	@docker-compose -f docker-compose.prod.yml up -d
+# 	@sleep 30
+# 	@$(MAKE) --no-print-directory status-prod
+# 	@echo ""
+# 	@echo "🌐 Production Mode - Caddy Reverse Proxy:"
+# 	@echo "   🎨 Frontend:      http://localhost (Next.js production)"
+# 	@echo "   🔌 Backend API:   http://localhost/api"
+# 	@echo "   🌬️ Airflow UI:    http://localhost/airflow"
+# 	@echo "   📊 Grafana:       http://localhost/grafana"
+# 	@echo "   🧪 MLflow:        http://localhost/mlflow"
+
+up-prod: ## 🏭 Start production environment (optimized)
 	@echo "🏭 Starting Insight Aura (Production)"
 	@echo "====================================="
 	@export ENVIRONMENT=production
-	@$(MAKE) --no-print-directory _setup-dirs
-	@$(MAKE) --no-print-directory _setup-configs
-	@$(MAKE) --no-print-directory _backup-before-start
+	@$(MAKE) --no-print-directory -j 3 _setup-dirs _setup-configs _backup-before-start
 	@echo "🔌 Starting PostgreSQL..."
 	@docker-compose -f docker-compose.prod.yml up -d postgres
-	@$(MAKE) --no-print-directory _wait-postgres-prod
-	@echo "📦 Installing dependencies..."
-	@$(MAKE) --no-print-directory _install-deps-quiet-prod
+	@$(MAKE) --no-print-directory _wait-postgres-prod &
+	@$(MAKE) --no-print-directory _install-deps-quiet-prod &
+	@wait
 	@echo "🧪 Initializing Airflow..."
 	@$(MAKE) --no-print-directory _init-airflow-prod
 	@echo "🚀 Starting production services with Caddy reverse proxy..."
-	@docker-compose -f docker-compose.prod.yml build --no-cache
-	@docker-compose -f docker-compose.prod.yml up -d
-	@sleep 30
+	@docker-compose -f docker-compose.prod.yml up -d --build
+	@$(MAKE) --no-print-directory _wait-for-services
 	@$(MAKE) --no-print-directory status-prod
 	@echo ""
 	@echo "🌐 Production Mode - Caddy Reverse Proxy:"
@@ -137,7 +161,17 @@ up-prod: ## 🏭 Start production environment
 	@echo "   🔌 Backend API:   http://localhost/api"
 	@echo "   🌬️ Airflow UI:    http://localhost/airflow"
 	@echo "   📊 Grafana:       http://localhost/grafana"
-	@echo "   🧪 MLflow:        http://localhost/mlflow"
+	@echo "   � MLflow:        http://localhost/mlflow"
+
+_wait-for-services:
+	@echo "⏳ Waiting for services to be ready..."
+	@for i in $$(seq 1 10); do \
+		if docker-compose -f docker-compose.prod.yml ps | grep -v "healthy" | grep -q "Up"; then \
+			sleep 3; \
+		else \
+			break; \
+		fi; \
+	done
 
 down: ## 🛑 Stop all services
 	@echo "🛑 Stopping all services..."
