@@ -192,23 +192,20 @@ services:
     image: python:3.9-slim
     container_name: insightaura_mlflow_prod
     volumes:
-      - mlflow_data:/mlflow_data
-      - mlflow_db:/data/mlflow
+      - mlflow_data:/mlflow
     environment:
-      - MLFLOW_TRACKING_URI=http://0.0.0.0:5001
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_PORT=5001
     command: >-
       sh -c "
-      echo 'Installing latest MLflow...' &&
-      pip install --no-cache-dir mlflow &&
-      echo 'Creating directories...' &&
-      mkdir -p /data/mlflow &&
-      mkdir -p /mlflow_data/artifacts &&
-      echo 'Starting MLflow server...' &&
+      pip install mlflow &&
+      mkdir -p /mlflow &&
       mlflow server \
+        --backend-store-uri sqlite:////mlflow/mlflow.db \
+        --default-artifact-root /mlflow/artifacts \
         --host 0.0.0.0 \
         --port 5001 \
-        --backend-store-uri sqlite:////data/mlflow/mlflow.db \
-        --artifacts-destination file:///mlflow_data/artifacts
+        --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60'
       "
     networks:
       - insightaura_network
