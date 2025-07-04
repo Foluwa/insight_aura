@@ -187,7 +187,7 @@ services:
   #   restart: unless-stopped
   #   expose: 
   #     - "5001"
-
+# --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60 --workers 4
   mlflow:
     image: python:3.9-slim
     container_name: insightaura_mlflow_prod
@@ -198,14 +198,15 @@ services:
       - MLFLOW_PORT=5001
     command: >-
       sh -c "
-      pip install mlflow &&
+      echo 'Installing MLflow...' &&
+      pip install --no-cache-dir mlflow &&
+      echo 'Creating directories...' &&
       mkdir -p /mlflow &&
+      echo 'Starting MLflow server on 0.0.0.0:5001...' &&
       mlflow server \
         --backend-store-uri sqlite:////mlflow/mlflow.db \
         --default-artifact-root /mlflow/artifacts \
-        --host 0.0.0.0 \
-        --port 5001 \
-        --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60'
+        --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60 --workers 4'
       "
     networks:
       - insightaura_network
