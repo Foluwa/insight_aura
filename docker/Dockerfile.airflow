@@ -2,12 +2,17 @@ FROM apache/airflow:3.0.1
 
 USER root
 
-# Install system dependencies (minimal)
+# Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Create and fix permissions for log directories
+RUN mkdir -p /opt/airflow/logs/dag_processor && \
+    mkdir -p /opt/airflow/logs/scheduler && \
+    chown -R airflow:root /opt/airflow/logs
 
 USER airflow
 

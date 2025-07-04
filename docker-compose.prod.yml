@@ -128,26 +128,13 @@ services:
       bash -c "
       until airflow db check; do sleep 5; done &&
       airflow db migrate &&
-      (airflow users create \
-        --username $${AIRFLOW_ADMIN_USERNAME} \
-        --firstname $${AIRFLOW_ADMIN_FIRSTNAME} \
-        --lastname $${AIRFLOW_ADMIN_LASTNAME} \
-        --role $${AIRFLOW_ADMIN_ROLE} \
-        --email $${AIRFLOW_ADMIN_EMAIL} \
-        --password $${AIRFLOW_ADMIN_PASSWORD} || true) &&
-      ([ -n \"$${AIRFLOW_USER_USERNAME}\" ] && airflow users create \
-        --username $${AIRFLOW_USER_USERNAME} \
-        --firstname $${AIRFLOW_USER_FIRSTNAME} \
-        --lastname $${AIRFLOW_USER_LASTNAME} \
-        --role $${AIRFLOW_USER_ROLE} \
-        --email $${AIRFLOW_USER_EMAIL} \
-        --password $${AIRFLOW_USER_PASSWORD} || true) &&
+      (airflow db init-db || true) &&
       exec airflow standalone
       "
     volumes:
       - ./backend/airflow/dags:/opt/airflow/dags
       - ./backend/airflow/plugins:/opt/airflow/plugins
-      - ./backend/airflow/logs:/opt/airflow/logs
+      - airflow_logs:/opt/airflow/logs
       - ./backend:/opt/airflow/backend
       - insightaura_airflow_data_prod:/opt/airflow
     environment:
@@ -174,6 +161,34 @@ services:
         limits:
           cpus: '1.0'
           memory: 1500M
+          
+  # mlflow:
+  #   image: python:3.9-slim
+  #   container_name: insightaura_mlflow_prod
+  #   volumes:
+  #     - mlflow_data:/mlflow_data
+  #     - mlflow_db:/data/mlflow
+  #   environment:
+  #     - MLFLOW_TRACKING_URI=http://localhost:5001
+  #     - MLFLOW_SERVE_ARTIFACTS=1
+  #     - MLFLOW_ARTIFACTS_DESTINATION=/mlflow_data/artifacts
+  #   command: >-
+  #     sh -c "
+  #     mkdir -p /data/mlflow &&
+  #     mkdir -p /mlflow_data/artifacts &&
+  #     pip install --no-cache-dir mlflow &&
+  #     mlflow server
+  #       --host 0.0.0.0
+  #       --port 5001
+  #       --backend-store-uri sqlite:////data/mlflow/mlflow.db
+  #       --default-artifact-root file:///mlflow_data/artifacts
+  #       --serve-artifacts
+  #     "
+  #   networks:
+  #     - insightaura_network
+  #   restart: unless-stopped
+  #   expose: 
+  #     - "5001"
 
   mlflow:
     image: python:3.9-slim
@@ -182,26 +197,37 @@ services:
       - mlflow_data:/mlflow_data
       - mlflow_db:/data/mlflow
     environment:
-      - MLFLOW_TRACKING_URI=http://localhost:5001
-      - MLFLOW_SERVE_ARTIFACTS=1
-      - MLFLOW_ARTIFACTS_DESTINATION=/mlflow_data/artifacts
+      - MLFLOW_TRACKING_URI=http://0.0.0.0:5001
     command: >-
       sh -c "
+      echo 'Installing latest MLflow...' &&
+      pip install --no-cache-dir mlflow &&
+      echo 'Creating directories...' &&
       mkdir -p /data/mlflow &&
       mkdir -p /mlflow_data/artifacts &&
-      pip install --no-cache-dir mlflow &&
-      mlflow server
-        --host 0.0.0.0
-        --port 5001
-        --backend-store-uri sqlite:////data/mlflow/mlflow.db
-        --default-artifact-root file:///mlflow_data/artifacts
-        --serve-artifacts
+      echo 'Starting MLflow server...' &&
+      mlflow server \
+        --host 0.0.0.0 \
+        --port 5001 \
+        --backend-store-uri sqlite:////data/mlflow/mlflow.db \
+        --artifacts-destination file:///mlflow_data/artifacts
       "
     networks:
       - insightaura_network
     restart: unless-stopped
     expose: 
       - "5001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
   grafana:
     image: grafana/grafana:latest
@@ -271,6 +297,7 @@ volumes:
   insightaura_mlflow_data_prod:
   mlflow_data:
   mlflow_db:
+  airflow_logs:
 
 networks:
   insightaura_network:
