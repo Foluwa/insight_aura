@@ -1,47 +1,36 @@
-FROM node:18-alpine AS builder
-
+FROM node:18-alpine AS deps
 WORKDIR /app
 COPY frontend/package*.json ./
 RUN npm ci --omit=dev
 
-COPY frontend/tsconfig.json ./
-COPY frontend/public ./public
-COPY frontend/src ./src
-COPY frontend/next.config.mjs* ./
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY frontend/ .
 
-# Add explicit build args for cache busting
 ARG BUILD_ID
+ENV BUILD_ID=$BUILD_ID
+ENV NODE_ENV=production
+
 RUN npm run build
 
 FROM node:18-alpine AS runner
-
-ENV NODE_ENV=production
 WORKDIR /app
 
-# 1. Create required directories
-RUN mkdir -p \
-  .next/static \
-  public/images
+ENV NODE_ENV=production
 
-# 2. Copy package files first for better layer caching
-COPY --from=builder /app/package*.json ./
-COPY --from=builder /app/node_modules ./node_modules
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
 
-# 3. Copy build outputs with proper permissions
-COPY --from=builder --chown=node:node /app/.next ./.next
-COPY --from=builder --chown=node:node /app/public ./public
-COPY --from=builder /app/next.config.mjs ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
-# 4. Add health check endpoint
-RUN echo '{"status":"ok"}' > public/health.json
-
-# 5. Set up production user
-RUN chown -R node:node /app
-USER node
+USER nextjs
 
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:3000/health.json || exit 1
+ENV PORT 3000
+ENV HOSTNAME 0.0.0.0
 
-CMD ["./node_modules/.bin/next", "start", "-H", "0.0.0.0", "-p", "3000"]
+CMD ["node", "server.js"]

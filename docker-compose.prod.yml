@@ -21,10 +21,6 @@ services:
       - NEXT_PUBLIC_MLFLOW_URL=https://mlflow.insightaura.duckdns.org
     networks:
       - insightaura_network
-    volumes:
-      - ./frontend/public/images:/app/public/images:ro
-      - ./frontend/.next/static:/app/.next/static
-      - ./frontend/public:/app/public
     expose:
       - "3000"
     ports:
