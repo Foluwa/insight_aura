@@ -1,28 +1,4 @@
-# Create .flake8 file in your project root
 [flake8]
 max-line-length = 88
-extend-ignore = 
-    # Ignore specific errors temporarily while fixing
-    F821,  # undefined name
-    F824,  # unused global
-    E203,  # whitespace before ':'
-    W503,  # line break before binary operator
-
-exclude = 
-    .git,
-    __pycache__,
-    .pytest_cache,
-    .venv,
-    venv,
-    .env,
-    frontend/node_modules,
-    datasets/
-
-# Paths to check
-filename = 
-    backend/*.py,
-    tests/*.py
-
-per-file-ignores =
-    # Allow unused imports in __init__.py files
-    __init__.py:F401
+extend-ignore = F821,F824,E203,W503,F401
+exclude = .git,__pycache__,.pytest_cache,.venv,venv,.env,frontend,datasets
