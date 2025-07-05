@@ -112,7 +112,7 @@ jobs:
           set -e
           
           # Navigate to project directory
-          cd ${{ secrets.VPS_PROJECT_PATH || '/opt/sentiment' }}
+          cd ${{ secrets.VPS_PROJECT_PATH || '/root/insight_aura' }}
           
           # Pull latest code
           git pull origin main
