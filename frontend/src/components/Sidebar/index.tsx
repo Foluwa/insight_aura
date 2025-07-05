@@ -58,15 +58,32 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
   return (
     <ClickOutside onClick={() => setSidebarOpen(false)}>
       <aside
-        className={`absolute left-0 top-0 z-9999 flex h-screen w-72.5 flex-col overflow-y-hidden border-r border-stroke bg-white dark:border-stroke-dark dark:bg-gray-dark lg:static lg:translate-x-0 ${
-          sidebarOpen
+        className={`absolute left-0 top-0 z-9999 flex h-screen w-72.5 flex-col overflow-y-hidden border-r border-stroke bg-white dark:border-stroke-dark dark:bg-gray-dark lg:static lg:translate-x-0 ${sidebarOpen
             ? "translate-x-0 duration-300 ease-linear"
             : "-translate-x-full"
-        }`}
+          }`}
       >
         {/* <!-- SIDEBAR HEADER --> */}
         <div className="flex items-center justify-between gap-2 px-6 py-5.5 lg:py-6.5 xl:py-10">
           <Link href="/">
+            <Image
+              src={"/images/logo/logo-icon.svg"}
+              alt="Logo"
+              priority
+              width={176}
+              height={32}
+              className="dark:hidden w-32 sm:w-36 md:w-40 lg:w-44 xl:w-48 h-auto max-w-full"
+            />
+            <Image
+              src={"/images/logo/logo-dark.svg"}
+              alt="Logo"
+              priority
+              width={176}
+              height={32}
+              className="hidden dark:block w-32 sm:w-36 md:w-40 lg:w-44 xl:w-48 h-auto max-w-full"
+            />
+          </Link>
+          {/* <Link href="/">
             <Image
               width={176}
               height={32}
@@ -79,14 +96,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
             <Image
               width={176}
               height={32}
-              // src={"/images/logo/logo.svg"}
               src={"/images/logo/logo-dark.svg"}
               alt="Logo"
               priority
               className="hidden dark:block"
               style={{ width: "auto", height: "auto" }}
             />
-          </Link>
+          </Link> */}
 
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -133,7 +149,7 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
           </nav>
           {/* <!-- Sidebar Menu --> */}
           <nav className="mt-1 px-4 lg:px-6"> <DarkModeSwitcher /></nav>
-          
+
         </div>
       </aside>
     </ClickOutside>
