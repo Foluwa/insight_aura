@@ -1,0 +1,4 @@
+[flake8]
+max-line-length = 88
+extend-ignore = F821,F824,E203,W503,F401
+exclude = .git,__pycache__,.pytest_cache,.venv,venv,.env,frontend,datasets

@@ -1,0 +1,270 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        - BUILD_ID=${BUILD_ID:-0}
+        - NEXT_PUBLIC_API_URL=/api
+        - NEXT_PUBLIC_APP_ENV=production
+    container_name: insightaura_frontend_prod
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_APP_ENV=production
+      - NEXT_PUBLIC_API_URL=https://api.insightaura.duckdns.org
+      - NEXT_PUBLIC_AIRFLOW_URL=https://airflow.insightaura.duckdns.org
+      - NEXT_PUBLIC_GRAFANA_URL=https://grafana.insightaura.duckdns.org
+      - NEXT_PUBLIC_MLFLOW_URL=https://mlflow.insightaura.duckdns.org
+    networks:
+      - insightaura_network
+    expose:
+      - "3000"
+    ports:
+      - "3000:3000" 
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  caddy:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.caddy
+      args:
+        - CADDY_VERSION=2.10
+    container_name: insightaura_caddy_prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - EMAIL=${EMAIL}
+      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+      - CADDY_INGRESS_NETWORKS=insightaura_network
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - insightaura_caddy_data:/data
+      - insightaura_caddy_config:/config
+      - insightaura_caddy_logs:/var/log/caddy
+    networks:
+      - insightaura_network
+    depends_on:
+      - frontend
+      - backend
+      - airflow_standalone
+      - grafana
+      - mlflow
+
+  backend:
+    image: python:3.9-slim
+    container_name: insightaura_backend_prod
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    working_dir: /app
+    command: sh -c "\
+      pip install --no-cache-dir -r requirements.txt && \
+      python -c 'import asyncio; from backend.database.migration_runner import run_migrations; asyncio.run(run_migrations())' && \
+      python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+      - PROXY_ENABLED=${PROXY_ENABLED:-false}
+      - HTTP_PROXY=${HTTP_PROXY}
+      - HTTPS_PROXY=${HTTPS_PROXY}
+      - CORS_ORIGINS=http://localhost,https://localhost,https://${DOMAIN:-localhost}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - insightaura_network
+    expose:
+      - "8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+  postgres:
+    image: postgres:13
+    container_name: insightaura_postgres_prod
+    restart: always
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    networks:
+      - insightaura_network
+    volumes:
+      - insightaura_postgres_data_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow_standalone:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: insightaura_airflow_prod
+    env_file:
+      - .env 
+    command: >
+      bash -c "
+      until airflow db check; do sleep 5; done &&
+      airflow db migrate &&
+      (airflow db init-db || true) &&
+      exec airflow standalone
+      "
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - insightaura_airflow_data_prod:/opt/airflow
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__EXPOSE_CONFIG=true
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY:-changeme}
+      - AIRFLOW__WEBSERVER__BASE_URL=https://airflow.insightaura.duckdns.org
+      - AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX=True
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      - DATABASE_URL=${DATABASE_URL}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=production
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+    expose:
+      - "8080"
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1500M
+          
+  mlflow:
+    image: python:3.9-slim
+    container_name: insightaura_mlflow_prod
+    volumes:
+      - mlflow_data:/mlflow
+    environment:
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_PORT=5001
+    command: >-
+      sh -c "
+      echo 'Installing MLflow...' &&
+      pip install --no-cache-dir mlflow &&
+      echo 'Creating directories...' &&
+      mkdir -p /mlflow &&
+      echo 'Starting MLflow server on 0.0.0.0:5001...' &&
+      mlflow server \
+        --backend-store-uri sqlite:////mlflow/mlflow.db \
+        --default-artifact-root /mlflow/artifacts \
+        --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60 --workers 4'
+      "
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+    expose: 
+      - "5001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5001/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: insightaura_grafana_prod
+    volumes:
+      - ./infrastructure/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./infrastructure/grafana/dashboards:/etc/grafana/dashboards
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - insightaura_grafana_data_prod:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    environment:
+      - GF_SERVER_DOMAIN=grafana.insightaura.duckdns.org
+      - GF_SERVER_ROOT_URL=https://grafana.insightaura.duckdns.org/
+      - GF_SERVER_HTTP_PORT=3001
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+      - GF_METRICS_ENABLED=false
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+    ports:
+      - "3001:3001"
+    networks:
+      - insightaura_network
+    restart: unless-stopped
+    expose:
+      - "3001"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: insightaura_prometheus_prod
+    volumes:
+      - ./infrastructure/monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - insightaura_prometheus_data_prod:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=48h'
+      - '--storage.tsdb.wal-compression'
+      - '--web.enable-lifecycle'
+    networks:
+      - insightaura_network
+    expose:
+      - "9090"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 384M
+
+volumes:
+  insightaura_postgres_data_prod:
+  insightaura_prometheus_data_prod:
+  insightaura_grafana_data_prod:
+  insightaura_airflow_data_prod:
+  insightaura_caddy_data:
+  insightaura_caddy_config:
+  insightaura_caddy_logs:
+  insightaura_mlflow_data_prod:
+  mlflow_data:
+  mlflow_db:
+  airflow_logs:
+
+networks:
+  insightaura_network:
+    driver: bridge

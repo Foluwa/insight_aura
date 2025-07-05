@@ -94,9 +94,9 @@ def retrain_sentiment_model():
         logger.error(f"❌ Retraining failed: {str(e)}")
         send_telegram_alert(f"❌ Retraining failed: {str(e)}")
         send_slack_alert(f"❌ Retraining failed: {str(e)}")
-        send_email_alert(
-            subject="ML Retrain ❌ FAILED",
-            body=f"Retraining error: {str(e)}",
-            to="you@example.com"
-        )
+        # send_email_alert(
+        #     subject="ML Retrain ❌ FAILED",
+        #     body=f"Retraining error: {str(e)}",
+        #     to="you@example.com"
+        # )
         raise

@@ -87,3 +87,4 @@ mlruns.db
 # Custom files
 TODOS.md
 env_sent/
+package-lock.json

@@ -1,0 +1,164 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        - BUILD_ID=${BUILD_ID:-0}
+        - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+        - NEXT_PUBLIC_APP_ENV=development
+    container_name: insightaura_frontend_dev
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - NEXT_PUBLIC_APP_ENV=development
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_AIRFLOW_URL=http://localhost:8080
+      - NEXT_PUBLIC_GRAFANA_URL=http://localhost:3001
+      - NEXT_PUBLIC_MLFLOW_URL=http://localhost:5001
+    networks:
+      - insightaura_dev_network
+    ports:
+      - "3000:3000"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  backend:
+    image: python:3.9-slim
+    container_name: insightaura_backend_dev
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+    working_dir: /app
+    command: sh -c "\
+      pip install --no-cache-dir -r requirements.txt && \
+      python -c 'import asyncio; from backend.database.migration_runner import run_migrations; asyncio.run(run_migrations())' && \
+      python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://airflow:airflow@postgres:5432/airflow}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - ENVIRONMENT=development
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://frontend:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - insightaura_dev_network
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1024M
+
+  postgres:
+    image: postgres:13
+    container_name: insightaura_postgres_dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    networks:
+      - insightaura_dev_network
+    ports:
+      - "5432:5432"
+    volumes:
+      - insightaura_postgres_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow_standalone:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.airflow
+    container_name: insightaura_airflow_dev
+    env_file:
+      - .env 
+    command: >
+      bash -c "
+      until airflow db check; do sleep 5; done &&
+      airflow db migrate &&
+      exec airflow standalone
+      "
+    volumes:
+      - ./backend/airflow/dags:/opt/airflow/dags
+      - ./backend/airflow/plugins:/opt/airflow/plugins
+      - airflow_logs_dev:/opt/airflow/logs
+      - ./backend:/opt/airflow/backend
+      - insightaura_airflow_data_dev:/opt/airflow
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
+      - AIRFLOW__CORE__LOAD_EXAMPLES=false
+      - AIRFLOW__API__EXPOSE_CONFIG=true
+      - AIRFLOW__API__AUTH_BACKENDS=airflow.api.auth.backend.basic_auth
+      - AIRFLOW__WEBSERVER__SECRET_KEY=${AIRFLOW_WEBSERVER_SECRET_KEY:-changeme}
+      - AIRFLOW__WEBSERVER__BASE_URL=http://localhost:8080
+      - AIRFLOW__WEBSERVER__ENABLE_PROXY_FIX=False
+      - PYTHONPATH=/opt/airflow:/opt/airflow/backend
+      - DATABASE_URL=${DATABASE_URL:-postgresql://airflow:airflow@postgres:5432/airflow}
+      - ENVIRONMENT=development
+    networks:
+      - insightaura_dev_network
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1500M
+
+  mlflow:
+    image: python:3.9-slim
+    container_name: insightaura_mlflow_dev
+    volumes:
+      - mlflow_data_dev:/mlflow
+    environment:
+      - MLFLOW_HOST=0.0.0.0
+      - MLFLOW_PORT=5001
+    command: >-
+      sh -c "
+      echo 'Installing MLflow...' &&
+      pip install --no-cache-dir mlflow &&
+      echo 'Creating directories...' &&
+      mkdir -p /mlflow &&
+      echo 'Starting MLflow server on 0.0.0.0:5001...' &&
+      mlflow server \
+        --backend-store-uri sqlite:////mlflow/mlflow.db \
+        --default-artifact-root /mlflow/artifacts \
+        --gunicorn-opts '--bind 0.0.0.0:5001 --timeout 60 --workers 2'
+      "
+    networks:
+      - insightaura_dev_network
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  insightaura_postgres_data_dev:
+  insightaura_airflow_data_dev:
+  mlflow_data_dev:
+  airflow_logs_dev:
+
+networks:
+  insightaura_dev_network:
+    driver: bridge
