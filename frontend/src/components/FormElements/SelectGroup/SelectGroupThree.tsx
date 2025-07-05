@@ -27,21 +27,21 @@ const SelectGroupThree: React.FC = () => {
             isOptionSelected ? "text-dark dark:text-white" : ""
           }`}
         >
-          <option value="" disabled className="text-body dark:text-bodydark">
+          <option value="" disabled className="text-dark-5 dark:text-dark-6">
             Select your subject
           </option>
-          <option value="Student" className="text-body dark:text-bodydark">
+          <option value="Student" className="text-dark-5 dark:text-dark-6">
             Student
           </option>
           <option
             value="UX/UI Designer"
-            className="text-body dark:text-bodydark"
+            className="text-dark-5 dark:text-dark-6"
           >
             UX/UI Designer
           </option>
           <option
             value="Web Developer"
-            className="text-body dark:text-bodydark"
+            className="text-dark-5 dark:text-dark-6"
           >
             Web Developer
           </option>

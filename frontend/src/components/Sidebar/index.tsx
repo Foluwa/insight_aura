@@ -7,6 +7,7 @@ import Image from "next/image";
 import SidebarItem from "@/components/Sidebar/SidebarItem";
 import ClickOutside from "@/components/ClickOutside";
 import useLocalStorage from "@/hooks/useLocalStorage";
+import DarkModeSwitcher from "../Header/DarkModeSwitcher";
 
 interface SidebarProps {
   sidebarOpen: boolean;
@@ -131,6 +132,8 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }: SidebarProps) => {
             ))}
           </nav>
           {/* <!-- Sidebar Menu --> */}
+          <nav className="mt-1 px-4 lg:px-6"> <DarkModeSwitcher /></nav>
+          
         </div>
       </aside>
     </ClickOutside>
