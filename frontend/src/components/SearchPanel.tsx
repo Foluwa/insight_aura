@@ -208,8 +208,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ isOpen, onClose, onAnalysisCo
                       </button>
                     </div>
                   </div>
-
-                  {/* Examples */}
+          
                   <div>
                     <p className="mb-3 text-body-sm text-dark dark:text-dark-6">Examples:</p>
                     <div className="flex flex-wrap gap-2">

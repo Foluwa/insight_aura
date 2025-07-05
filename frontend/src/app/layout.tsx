@@ -3,6 +3,7 @@ import "@/css/satoshi.css";
 import "@/css/style.css";
 import React, { useEffect, useState } from "react";
 import Loader from "@/components/common/Loader";
+import { ReduxProvider } from '@/components/Providers/ReduxProvider';
 
 export default function RootLayout({
   children,
@@ -17,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body suppressHydrationWarning={true}>
-        {loading ? <Loader /> : children}
+        {loading ? <Loader /> : <ReduxProvider>
+          {children}
+        </ReduxProvider>}
       </body>
     </html>
   );
