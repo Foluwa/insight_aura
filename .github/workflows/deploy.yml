@@ -40,7 +40,6 @@ jobs:
 
     - name: Run tests
       run: |
-        # Run your tests here
         python -m pytest tests/ -v || echo "No tests found"
         
     - name: Lint code
@@ -51,11 +50,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     needs: test
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     
-    outputs:
-      image-tag: ${{ steps.meta.outputs.tags }}
-      
+    strategy:
+      matrix:
+        service: [backend, frontend, airflow, caddy, grafana, prometheus, mlflow]
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -74,7 +74,7 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
         tags: |
           type=ref,event=branch
           type=sha,prefix={{branch}}-
@@ -84,7 +84,7 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./docker/Dockerfile.airflow
+        file: ./docker/Dockerfile.${{ matrix.service }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
@@ -94,7 +94,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     needs: build
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/main'
     
     steps:
     - name: Checkout code
@@ -119,19 +119,48 @@ jobs:
           # Login to GitHub Container Registry
           echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
           
-          # Pull latest images
-          docker-compose pull
+          # Create .env file from secrets if it doesn't exist
+          if [ ! -f .env ]; then
+            cp .env.example .env
+            echo "Created .env file from .env.example"
+          fi
           
-          # Restart services with zero downtime
-          docker-compose up -d --force-recreate
+          # Pull latest images
+          docker-compose -f docker-compose.prod.yml pull
+          
+          # Stop services gracefully
+          docker-compose -f docker-compose.prod.yml down
+          
+          # Start services with zero downtime
+          docker-compose -f docker-compose.prod.yml up -d
           
           # Clean up old images
           docker image prune -f
           
-          # Health check
-          sleep 30
-          curl -f http://localhost:8080/health || echo "Airflow health check failed"
-          curl -f http://localhost:8000/health || echo "Backend health check failed"
+          # Health checks with retries
+          echo "Waiting for services to start..."
+          sleep 60
+          
+          # Check each service
+          for i in {1..5}; do
+            if curl -f http://localhost:8000/health; then
+              echo "✅ Backend is healthy"
+              break
+            else
+              echo "⏳ Waiting for backend... (attempt $i/5)"
+              sleep 30
+            fi
+          done
+          
+          for i in {1..5}; do
+            if curl -f http://localhost:8080/health; then
+              echo "✅ Airflow is healthy"
+              break
+            else
+              echo "⏳ Waiting for airflow... (attempt $i/5)"
+              sleep 30
+            fi
+          done
           
           echo "✅ Deployment completed successfully!"
 
