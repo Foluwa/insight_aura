@@ -82,9 +82,11 @@ mlruns/
 mlartifacts/
 outputs/
 mlruns.db
+mlflow.db
 **/basic_auth.db
 
 # Custom files
 TODOS.md
 env_sent/
 package-lock.json
+backups/
