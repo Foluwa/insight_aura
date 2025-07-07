@@ -263,7 +263,7 @@ const SearchPanel: React.FC<SearchPanelProps> = ({ isOpen, onClose, onAnalysisCo
             <div className="py-8 text-center">
               <div className="mb-6 text-6xl animate-pulse">⚡</div>
               <h4 className="mb-3 text-body-2xlg font-bold text-dark dark:text-white">Analysis in Progress</h4>
-              <p className="mb-8 text-dark dark:text-dark-6">We're analyzing sentiment data across multiple sources...</p>
+              <p className="mb-8 text-dark dark:text-dark-6">We are analyzing sentiment data across multiple sources...</p>
               
               <div className="mb-8 h-2 w-full rounded-full bg-stroke dark:bg-dark-3">
                 <div 
